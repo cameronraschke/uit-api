@@ -1,0 +1,7 @@
+Package: uit-api
+Version: 1.0-1
+Section: Utilities
+Priority: optional
+Architecture: amd64
+Maintainer: Cameron Raschke <caraschke@uh.edu>
+Description: Backend.

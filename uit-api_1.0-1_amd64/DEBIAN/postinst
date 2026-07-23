@@ -1,0 +1,39 @@
+#!/bin/bash
+
+## Package setup
+# Make directories
+mkdir -p /opt/uit-toolbox/uit-api/
+
+# Compile uit-api
+(cd /opt/uit-toolbox/uit-api/
+	/usr/local/go/bin/go build .
+)
+
+# Update file permissions
+chown uitweb:uit /opt/uit-toolbox/uit-api/ -R
+find /opt/uit-toolbox/uit-api/ -type d -exec chmod 770 {} \;
+find /opt/uit-toolbox/uit-api/ -type f -exec chmod 660 {} \;
+chmod 750 /opt/uit-toolbox/uit-api/uit-api
+
+# Create systemd service
+touch /etc/systemd/system/uit-api.service
+chmod 644 /etc/systemd/system/uit-api.service
+
+cat <<EOF > /etc/systemd/system/uit-api.service
+[Unit]
+Description=UIT API Web Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/uit-toolbox/uit-api/uit-api
+WorkingDirectory=/opt/uit-toolbox/uit-api/
+User=uitweb
+Group=uitweb
+UMask=227
+Restart=on-failure
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target
+EOF
