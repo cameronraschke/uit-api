@@ -10,6 +10,8 @@ mkdir -p /opt/uit-toolbox/uit-api/
 )
 
 # Update file permissions
+chown root:root /opt/uit-toolbox
+chmod 755 /opt/uit-toolbox
 chown uitweb:uit /opt/uit-toolbox/uit-api/ -R
 find /opt/uit-toolbox/uit-api/ -type d -exec chmod 770 {} \;
 find /opt/uit-toolbox/uit-api/ -type f -exec chmod 660 {} \;
