@@ -34,6 +34,7 @@ type WindowsUpdateRequest struct {
 	BIOSVersion               *string          `json:"bios_version"`
 	BIOSReleaseDate           *string          `json:"bios_release_date"` // Converted later
 	TPMVersion                *string          `json:"tpm_version"`
+	TPMPublicKeyHash          *string          `json:"tpm_public_key_hash"`
 	SecureBootEnabled         *bool            `json:"secure_boot_enabled"`
 	OSInstalledAt             *string          `json:"os_installed_at"` // Converted later
 	OSVendor                  *string          `json:"os_vendor"`
@@ -85,6 +86,7 @@ type WindowsUpdateDTO struct {
 	BIOSVersion               *string
 	BIOSReleaseDate           *time.Time
 	TPMVersion                *string
+	TPMPublicKeyHash          *string
 	SecureBootEnabled         *bool
 	OSInstalledAt             *time.Time
 	OSVendor                  *string
@@ -213,6 +215,7 @@ func (request *WindowsUpdateRequest) ToDTO() (*WindowsUpdateDTO, error) {
 		BIOSVersion:               request.BIOSVersion,
 		BIOSReleaseDate:           convertedBIOSReleaseDate,
 		TPMVersion:                request.TPMVersion,
+		TPMPublicKeyHash:          request.TPMPublicKeyHash,
 		SecureBootEnabled:         request.SecureBootEnabled,
 		OSInstalledAt:             &convertedTime,
 		OSVendor:                  request.OSVendor,

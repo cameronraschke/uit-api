@@ -2191,7 +2191,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			cpu_model,
 			cpu_core_count,
 			cpu_thread_count,
-			tpm_version
+			tpm_version,
+			tpm_public_key
 		) VALUES (
 			CURRENT_TIMESTAMP,
 			$1,
@@ -2206,7 +2207,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			$10,
 			$11, 
 			$12,
-			$13
+			$13,
+			$14
 		) ON CONFLICT (client_uuid) DO UPDATE SET
 			time = CURRENT_TIMESTAMP,
 			transaction_uuid = EXCLUDED.transaction_uuid,
@@ -2221,6 +2223,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			cpu_core_count = COALESCE(EXCLUDED.cpu_core_count, hardware_data.cpu_core_count),
 			cpu_thread_count = COALESCE(EXCLUDED.cpu_thread_count, hardware_data.cpu_thread_count),
 			tpm_version = COALESCE(EXCLUDED.tpm_version, hardware_data.tpm_version)
+			tpm_public_key = COALESCE(EXCLUDED.tpm_public_key, hardware_data.tpm_public_key)
 	;`
 
 	hardwareDataResult, err := tx.Exec(ctx, hardwareDataSql,
@@ -2237,6 +2240,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		ptrToNullInt64(windowsUpdateDTO.CPUCoreCount),
 		ptrToNullInt64(windowsUpdateDTO.CPUThreadCount),
 		ptrToNullString(windowsUpdateDTO.TPMVersion),
+		ptrToNullString(windowsUpdateDTO.TPMPublicKeyHash),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
