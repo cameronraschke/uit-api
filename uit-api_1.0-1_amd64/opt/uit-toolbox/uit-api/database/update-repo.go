@@ -2494,7 +2494,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			secure_boot_enabled = EXCLUDED.secure_boot_enabled,
 			updated_from_windows = EXCLUDED.updated_from_windows,
 			installed_apps = EXCLUDED.installed_apps,
-			ad_sid = COALESCE(EXCLUDED.ad_sid, hardware_data.ad_sid)
+			ad_sid = os_info.ad_sid
 			;`
 
 	adminUsers := windowsUpdateDTO.AdminUsers
