@@ -41,6 +41,7 @@ type ClientInfoResponse struct {
 	OSInstalled               *bool                   `json:"OSInstalled"`
 	OSName                    *string                 `json:"OSName"`
 	OSVersion                 *string                 `json:"OSVersion"`
+	ADDomain                  *string                 `json:"ADDomain"`
 	OUName                    *string                 `json:"OUName"`
 	PropertyCustodian         *string                 `json:"PropertyCustodian"`
 	RetiredDate               *time.Time              `json:"RetiredDate"`

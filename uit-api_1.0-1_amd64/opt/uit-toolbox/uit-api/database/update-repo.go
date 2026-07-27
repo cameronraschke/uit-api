@@ -2436,9 +2436,9 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	// os_info upsert
 	const osInfoSQLCode = `
 		INSERT INTO os_info (
+			time,
 			client_uuid,
 			transaction_uuid,
-			time,
 			os_install_date,
 			os_vendor,
 			os_platform,
@@ -2451,6 +2451,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_disk_encrypted,
 			admin_users,
 			computer_name,
+			ad_domain, 
 			ad_ou,
 			ad_computer_name,
 			ad_distinguished_name,
@@ -2460,9 +2461,10 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			installed_apps,
 			ad_sid
 		) VALUES (
-			(SELECT uuid FROM ids WHERE tagnumber = $2 AND system_serial = $3),
-			$1,
 			CURRENT_TIMESTAMP,
+			$1,
+			$2,
+			$3,
 			$4,
 			$5,
 			$6,
@@ -2484,9 +2486,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			$22::TEXT[],
 			$23
 		) ON CONFLICT (client_uuid) DO UPDATE SET
-			client_uuid = EXCLUDED.client_uuid,
+			time = EXCLUDED.time,
 			transaction_uuid = EXCLUDED.transaction_uuid,
-			time = CURRENT_TIMESTAMP,
 			os_install_date = EXCLUDED.os_install_date,
 			os_vendor = EXCLUDED.os_vendor,
 			os_platform = EXCLUDED.os_platform,
@@ -2499,6 +2500,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_disk_encrypted = EXCLUDED.is_disk_encrypted,
 			admin_users = EXCLUDED.admin_users,
 			computer_name = EXCLUDED.computer_name,
+			ad_domain = EXCLUDED.ad_domain,
 			ad_ou = EXCLUDED.ad_ou,
 			ad_computer_name = EXCLUDED.ad_computer_name,
 			ad_distinguished_name = EXCLUDED.ad_distinguished_name,
@@ -2507,7 +2509,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			updated_from_windows = EXCLUDED.updated_from_windows,
 			installed_apps = EXCLUDED.installed_apps,
 			ad_sid = os_info.ad_sid
-			;`
+		;`
 
 	adminUsers := windowsUpdateDTO.AdminUsers
 	if len(adminUsers) == 0 {
@@ -2515,9 +2517,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	}
 
 	osInfoResult, err := tx.Exec(ctx, osInfoSQLCode,
+		toNullUUID(clientUUID),
 		toNullUUID(transactionUUID),
-		ptrToNullInt64(windowsUpdateDTO.RequestMetadata.Tagnumber),
-		ptrToNullString(windowsUpdateDTO.RequestMetadata.SystemSerial),
 		ptrToNullTime(windowsUpdateDTO.OSInstalledAt),
 		ptrToNullString(windowsUpdateDTO.OSVendor),
 		ptrToNullString(windowsUpdateDTO.OSPlatform),
@@ -2531,6 +2532,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		adminUsers,
 		ptrToNullString(windowsUpdateDTO.ComputerName),
 		ptrToNullString(windowsUpdateDTO.ADDomain),
+		ptrToNullString(windowsUpdateDTO.OUName),
 		ptrToNullString(windowsUpdateDTO.ADComputerName),
 		ptrToNullString(windowsUpdateDTO.ADDistinguishedName),
 		ptrToNullBool(windowsUpdateDTO.IsIntuneJoined),

@@ -48,10 +48,11 @@ type WindowsUpdateRequest struct {
 	IsDiskEncrypted           *bool            `json:"windows_bitlocker_enabled"`
 	ComputerName              *string          `json:"computer_name"`
 	AdminUsers                *string          `json:"ad_admin_users"`
-	ADSID                     *string          `json:"ad_sid"`
 	ADDomain                  *string          `json:"ad_domain"`
-	ADComputerName            *string          `json:"ad_computer_name"`
 	ADDistinguishedName       *string          `json:"ad_distinguished_name"`
+	OUName                    *string          `json:"ad_ou_name"`
+	ADComputerName            *string          `json:"ad_computer_name"`
+	ADSID                     *string          `json:"ad_sid"`
 	IsIntuneJoined            *bool            `json:"is_intune_joined"`
 	MemorySerial              *string          `json:"memory_serial"`
 	MemoryCapacityKB          *int64           `json:"memory_capacity_kb"`
@@ -101,8 +102,9 @@ type WindowsUpdateDTO struct {
 	IsDiskEncrypted           *bool
 	ComputerName              *string
 	AdminUsers                []string
-	ADSID                     *string
 	ADDomain                  *string
+	ADSID                     *string
+	OUName                    *string
 	ADComputerName            *string
 	ADDistinguishedName       *string
 	IsIntuneJoined            *bool
@@ -231,10 +233,11 @@ func (request *WindowsUpdateRequest) ToDTO() (*WindowsUpdateDTO, error) {
 		IsDiskEncrypted:           request.IsDiskEncrypted,
 		ComputerName:              request.ComputerName,
 		AdminUsers:                adAdminUsersArr,
-		ADSID:                     request.ADSID,
 		ADDomain:                  request.ADDomain,
-		ADComputerName:            request.ADComputerName,
 		ADDistinguishedName:       request.ADDistinguishedName,
+		OUName:                    request.OUName,
+		ADComputerName:            request.ADComputerName,
+		ADSID:                     request.ADSID,
 		IsIntuneJoined:            request.IsIntuneJoined,
 		MemorySerial:              memorySerialArr,
 		MemoryCapacityKB:          request.MemoryCapacityKB,
