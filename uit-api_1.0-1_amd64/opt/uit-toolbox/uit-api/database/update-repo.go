@@ -2192,8 +2192,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			cpu_core_count,
 			cpu_thread_count,
 			tpm_version,
-			tpm_public_key,
-			ad_sid
+			tpm_public_key
 		) VALUES (
 			CURRENT_TIMESTAMP,
 			$1,
@@ -2225,8 +2224,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			cpu_core_count = COALESCE(EXCLUDED.cpu_core_count, hardware_data.cpu_core_count),
 			cpu_thread_count = COALESCE(EXCLUDED.cpu_thread_count, hardware_data.cpu_thread_count),
 			tpm_version = COALESCE(EXCLUDED.tpm_version, hardware_data.tpm_version),
-			tpm_public_key = COALESCE(EXCLUDED.tpm_public_key, hardware_data.tpm_public_key),
-			ad_sid = COALESCE(EXCLUDED.ad_sid, hardware_data.ad_sid)
+			tpm_public_key = COALESCE(EXCLUDED.tpm_public_key, hardware_data.tpm_public_key)
 	;`
 
 	hardwareDataResult, err := tx.Exec(ctx, hardwareDataSql,
@@ -2244,7 +2242,6 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		ptrToNullInt64(windowsUpdateDTO.CPUThreadCount),
 		ptrToNullString(windowsUpdateDTO.TPMVersion),
 		ptrToNullString(windowsUpdateDTO.TPMPublicKeyHash),
-		ptrToNullString(windowsUpdateDTO.ADSID),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -2449,7 +2446,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_intune_joined,
 			secure_boot_enabled,
 			updated_from_windows,
-			installed_apps
+			installed_apps,
+			ad_sid
 		) VALUES (
 			(SELECT uuid FROM ids WHERE tagnumber = $2 AND system_serial = $3),
 			$1,
@@ -2495,7 +2493,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_intune_joined = EXCLUDED.is_intune_joined,
 			secure_boot_enabled = EXCLUDED.secure_boot_enabled,
 			updated_from_windows = EXCLUDED.updated_from_windows,
-			installed_apps = EXCLUDED.installed_apps
+			installed_apps = EXCLUDED.installed_apps,
+			ad_sid = COALESCE(EXCLUDED.ad_sid, hardware_data.ad_sid)
 			;`
 
 	adminUsers := windowsUpdateDTO.AdminUsers
@@ -2526,6 +2525,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		ptrToNullBool(windowsUpdateDTO.SecureBootEnabled),
 		ptrToNullBool(windowsUpdateDTO.RequestMetadata.UpdatedFromWindows),
 		windowsUpdateDTO.InstalledApps,
+		windowsUpdateDTO.ADSID,
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
