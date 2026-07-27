@@ -2208,8 +2208,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			$11, 
 			$12,
 			$13,
-			$14,
-			$15
+			$14
 		) ON CONFLICT (client_uuid) DO UPDATE SET
 			time = CURRENT_TIMESTAMP,
 			transaction_uuid = EXCLUDED.transaction_uuid,
@@ -2470,7 +2469,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			$19,
 			$20,
 			$21,
-			$22::TEXT[]
+			$22::TEXT[],
+			$23
 		) ON CONFLICT (client_uuid) DO UPDATE SET
 			client_uuid = EXCLUDED.client_uuid,
 			transaction_uuid = EXCLUDED.transaction_uuid,
