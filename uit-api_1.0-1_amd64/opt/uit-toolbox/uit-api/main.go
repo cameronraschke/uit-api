@@ -166,55 +166,19 @@ func main() {
 
 	log.Info("Servers started in: " + time.Since(startTime).String())
 
-	writeLastHeardToDB := func() {
-		parentCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-
-		realtimeDataMap, err := config.GetAllClientRealtimeData()
-		if err != nil {
-			log.Error("Failed to retrieve realtime data on app shutdown: " + err.Error())
-			return
-		}
-		if len(realtimeDataMap) == 0 {
-			log.Warn("No realtime client data found on shutdown; no last-heard values to persist")
-			return
-		}
-
-		var attempted, succeeded, failed int
-		for tag, realtimeData := range realtimeDataMap {
-			attempted++
-			if realtimeData.Tagnumber == 0 || realtimeData.LastHeard == nil || realtimeData.LastHeard.IsZero() {
-				failed++
-				log.Warn(fmt.Sprintf("Skipping tag %d on shutdown: missing or zero last_heard", tag))
-				continue
-			}
-
-			updateCtx, updateCancel := context.WithTimeout(parentCtx, 3*time.Second)
-			if err := database.UpdateClientLastHeard(updateCtx, tag, realtimeData.LastHeard); err != nil {
-				failed++
-				log.Error(fmt.Sprintf("Failed to write last heard for tag %d on app shutdown: %s", tag, err.Error()))
-				updateCancel()
-				continue
-			}
-			updateCancel()
-			succeeded++
-		}
-
-		log.Info(fmt.Sprintf("Finished writing last-heard values on shutdown (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeDataMap), attempted, succeeded, failed))
-		if attempted == 0 {
-			log.Warn("No shutdown DB writes were attempted because all realtime entries had missing/zero last_heard")
-		}
-	}
-
 	// Wait for shutdown signal or error
 	select {
 	case <-ctx.Done():
 		log.Info("Shutdown signal received.")
-		writeLastHeardToDB()
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
+		flushCancel()
 	case err := <-errChan:
 		log.Error("Error received: " + err.Error())
-		writeLastHeardToDB()
 		stop() // Cancel context to stop all goroutines
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
+		flushCancel()
 	}
 
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Second)

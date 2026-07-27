@@ -105,7 +105,7 @@ func backgroundProcesses(ctx context.Context, errChan chan error) {
 				}
 				return nil
 			case <-ticker.C:
-				logMsgs, err := writeLastHeardToDB()
+				logMsgs, err := writeLastHeardToDB(ctx, 0) // No sleep between writes during regular operation
 				if err != nil {
 					log.Error(fmt.Sprintf("Error writing last_heard to DB: %v", err))
 				}
@@ -136,7 +136,11 @@ func startAuthMapCleanup() (logMsg string, err error) {
 	return fmt.Sprintf("Auth session cleanup done (Sessions: %d, Expired: %d)", newSessionCount, sessionDiff), nil
 }
 
-func writeLastHeardToDB() (logMsg []string, err error) {
+func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []string, err error) {
+	log := config.GetLogger().With(slog.String("func", "writeLastHeardToDB"))
+	backgroundCtx, cancel := context.WithTimeout(parentCtx, 45*time.Second)
+	defer cancel()
+
 	realtimeData, err := config.GetAllClientRealtimeData()
 	if err != nil {
 		logMsg = append(logMsg, fmt.Sprintf("Error retrieving client realtime data: %v", err))
@@ -148,17 +152,38 @@ func writeLastHeardToDB() (logMsg []string, err error) {
 		return logMsg, nil
 	}
 
+	var attempted, succeeded, failed int
 	for tag, data := range realtimeData {
 		if data.Tagnumber == 0 || data.LastHeard == nil || data.LastHeard.IsZero() {
-			logMsg = append(logMsg, fmt.Sprintf("Skipping tag %d: missing or zero last_heard", tag))
+			failed++
+			logMsg = append(logMsg, fmt.Sprintf("Skipping tag %d: missing tag or nil last_heard", tag))
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		if err := database.UpdateClientLastHeard(ctx, tag, data.LastHeard); err != nil {
-			logMsg = append(logMsg, fmt.Sprintf("Failed to write last_heard for tag %d: %v", tag, err))
+
+		attempted++
+		updateCtx, updateCancel := context.WithTimeout(backgroundCtx, 3*time.Second)
+		if err := database.UpdateClientLastHeard(updateCtx, tag, data.LastHeard); err != nil {
+			failed++
+			log.Error(fmt.Sprintf("Failed to write last heard for tag '%d': %s", tag, err.Error()))
+			updateCancel()
+			continue
 		}
-		cancel()
-		time.Sleep(1 * time.Second) // Sleep to avoid overwhelming DB
+		succeeded++
+		updateCancel()
+		if d > 0 {
+			select {
+			case <-backgroundCtx.Done():
+				log.Warn("Stopping last-heard write loop early due to context cancellation")
+				return logMsg, nil
+			case <-time.After(d):
+				// Continue to next write interval.
+			}
+		}
+	}
+
+	log.Info(fmt.Sprintf("Finished writing last-heard values (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeData), attempted, succeeded, failed))
+	if attempted == 0 {
+		log.Warn("No DB writes were attempted for last_heard because all realtime entries had missing/zero last_heard data")
 	}
 
 	return logMsg, nil
