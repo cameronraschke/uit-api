@@ -118,6 +118,26 @@ func NewUpdateRepo() (Update, error) {
 
 var _ Update = (*UpdateRepo)(nil)
 
+const pgxTxCleanupTimeout = 5 * time.Second
+
+func cleanupPGXTx(tx pgx.Tx, opErr *error) {
+	if tx == nil || opErr == nil {
+		return
+	}
+
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), pgxTxCleanupTimeout)
+	defer cancel()
+
+	if *opErr != nil {
+		_ = tx.Rollback(cleanupCtx)
+		return
+	}
+
+	if commitErr := tx.Commit(cleanupCtx); commitErr != nil {
+		*opErr = fmt.Errorf("%w: %w", types.DatabaseTransactionError, commitErr)
+	}
+}
+
 func InsertNewNote(ctx context.Context, timestamp *time.Time, noteType *string, noteContent *string) (err error) {
 	if timestamp == nil || timestamp.IsZero() {
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "time")
@@ -391,15 +411,7 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			err = commitErr
-		}
-	}()
+	defer cleanupPGXTx(tx, &err)
 
 	// Insert/update ids table
 	const idsSql = `
@@ -1527,16 +1539,7 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
-
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			err = commitErr
-		}
-	}()
+	defer cleanupPGXTx(tx, &err)
 
 	clientUUID, err := lockClientRowBySystemSerialPGX(ctx, tx, *hardwareData.SystemSerial)
 	if err != nil {
@@ -1923,16 +1926,7 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
-
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			err = commitErr
-		}
-	}()
+	defer cleanupPGXTx(tx, &err)
 
 	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
 	if err != nil {
@@ -2186,16 +2180,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
-
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			err = commitErr
-		}
-	}()
+	defer cleanupPGXTx(tx, &err)
 
 	clientUUID, err := lockClientRowBySystemSerialPGX(ctx, tx, *windowsUpdateDTO.RequestMetadata.SystemSerial)
 	if err != nil {
@@ -2826,16 +2811,7 @@ func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
-
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			err = commitErr
-		}
-	}()
+	defer cleanupPGXTx(tx, &err)
 
 	const sqlCode = `
 	DELETE FROM os_info

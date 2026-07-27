@@ -175,14 +175,20 @@ func main() {
 			log.Error("Failed to retrieve realtime data on app shutdown: " + err.Error())
 			return
 		}
+		if len(realtimeDataMap) == 0 {
+			log.Warn("No realtime client data found on shutdown; no last-heard values to persist")
+			return
+		}
 
 		var attempted, succeeded, failed int
 		for tag, realtimeData := range realtimeDataMap {
-			if realtimeData.LastHeard == nil || realtimeData.LastHeard.IsZero() {
+			attempted++
+			if realtimeData.Tagnumber == 0 || realtimeData.LastHeard == nil || realtimeData.LastHeard.IsZero() {
+				failed++
+				log.Warn(fmt.Sprintf("Skipping tag %d on shutdown: missing or zero last_heard", tag))
 				continue
 			}
 
-			attempted++
 			updateCtx, updateCancel := context.WithTimeout(parentCtx, 3*time.Second)
 			if err := database.UpdateClientLastHeard(updateCtx, tag, realtimeData.LastHeard); err != nil {
 				failed++
@@ -194,7 +200,10 @@ func main() {
 			succeeded++
 		}
 
-		log.Info(fmt.Sprintf("Finished writing last-heard values on shutdown (attempted=%d succeeded=%d failed=%d)", attempted, succeeded, failed))
+		log.Info(fmt.Sprintf("Finished writing last-heard values on shutdown (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeDataMap), attempted, succeeded, failed))
+		if attempted == 0 {
+			log.Warn("No shutdown DB writes were attempted because all realtime entries had missing/zero last_heard")
+		}
 	}
 
 	// Wait for shutdown signal or error
