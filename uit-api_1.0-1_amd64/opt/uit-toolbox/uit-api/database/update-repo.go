@@ -527,7 +527,8 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		$11, 
 		$12, 
 		$13, 
-		$14
+		$14,
+		$15
 	) ON CONFLICT (client_uuid) DO UPDATE SET
 		time = EXCLUDED.time,
 		transaction_uuid = EXCLUDED.transaction_uuid,

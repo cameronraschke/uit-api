@@ -607,6 +607,7 @@ func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*type
 		COALESCE(files.file_count, 0) AS "file_count"
 	FROM ids
 	LEFT JOIN locations ON ids.uuid = locations.client_uuid
+	LEFT JOIN os_info ON ids.uuid = os_info.client_uuid
 	LEFT JOIN files ON ids.uuid = files.client_uuid
 	LEFT JOIN hardware_data ON ids.uuid = hardware_data.client_uuid
 	LEFT JOIN client_health ON ids.uuid = client_health.client_uuid
@@ -1019,14 +1020,14 @@ func GetInventoryTableData(ctx context.Context, filterOptions *types.InventoryAd
 			LEFT JOIN hardware_data ON ids.uuid = hardware_data.client_uuid
 			LEFT JOIN client_health ON ids.uuid = client_health.client_uuid
 			LEFT JOIN static_department_info ON locations.department_name = static_department_info.department_name
+			LEFT JOIN os_info ON ids.uuid = os_info.client_uuid
 			LEFT JOIN static_ou_names ON os_info.ad_ou = static_ou_names.ou_name
+			LEFT JOIN latest_os_versions ON os_info.os_name = latest_os_versions.os_name
 			LEFT JOIN static_client_statuses ON locations.client_status = static_client_statuses.status_name
 			LEFT JOIN static_device_types ON hardware_data.device_type = static_device_types.device_type
 			LEFT JOIN files ON ids.uuid = files.client_uuid
 			LEFT JOIN latest_historical_firmware_data ON ids.uuid = latest_historical_firmware_data.client_uuid
 			LEFT JOIN static_bios_stats ON hardware_data.system_model = static_bios_stats.system_model
-			LEFT JOIN os_info ON ids.uuid = os_info.client_uuid
-			LEFT JOIN latest_os_versions ON os_info.os_name = latest_os_versions.os_name
 			LEFT JOIN os_installed_table ON ids.uuid = os_installed_table.client_uuid
 			LEFT JOIN most_recent_checkout ON ids.uuid = most_recent_checkout.client_uuid
 		WHERE %s
@@ -2177,7 +2178,6 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 		locations.building,
 		locations.room,
 		static_department_info.department_name_formatted,
-		os_info.ad_ou,
 		static_ou_names.ou_name_formatted,
 		locations.property_custodian,
 		locations.acquired_date,
@@ -2274,8 +2274,9 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 			ORDER BY time DESC NULLS LAST
 			LIMIT 1
 		) locations ON TRUE
-		LEFT JOIN static_department_info ON locations.department_name = static_department_info.department_name
+		LEFT JOIN os_info ON ids.uuid = os_info.client_uuid
 		LEFT JOIN static_ou_names ON os_info.ad_ou = static_ou_names.ou_name
+		LEFT JOIN static_department_info ON locations.department_name = static_department_info.department_name
 		LEFT JOIN static_client_statuses ON locations.client_status = static_client_statuses.status_name
 		LEFT JOIN LATERAL (
 			SELECT
@@ -2388,25 +2389,6 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 			ORDER BY time DESC NULLS LAST
 			LIMIT 1
 		) checkout_log ON TRUE
-		LEFT JOIN LATERAL (
-			SELECT
-				time,
-				client_uuid,
-				os_name,
-				windows_build_number,
-				windows_ubr,
-				os_version,
-				ad_computer_name,
-				computer_name,
-				admin_users,
-				is_intune_joined,
-				is_disk_encrypted,
-				secure_boot_enabled
-			FROM os_info
-			WHERE client_uuid = ids.uuid
-			ORDER BY time DESC NULLS LAST
-			LIMIT 1
-		) os_info ON TRUE
 		LEFT JOIN LATERAL (
 			SELECT
 				image_version
