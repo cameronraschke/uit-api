@@ -167,19 +167,34 @@ func main() {
 	log.Info("Servers started in: " + time.Since(startTime).String())
 
 	writeLastHeardToDB := func() {
-		uncancelledCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		parentCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+
 		realtimeDataMap, err := config.GetAllClientRealtimeData()
 		if err != nil {
 			log.Error("Failed to retrieve realtime data on app shutdown: " + err.Error())
-			cancel()
 			return
 		}
+
+		var attempted, succeeded, failed int
 		for tag, realtimeData := range realtimeDataMap {
-			if err := database.UpdateClientLastHeard(uncancelledCtx, tag, realtimeData.LastHeard); err != nil {
-				log.Error(fmt.Sprintf("Failed to write last heard for tag %d on app shutdown: %s", tag, err.Error()))
+			if realtimeData.LastHeard == nil || realtimeData.LastHeard.IsZero() {
+				continue
 			}
+
+			attempted++
+			updateCtx, updateCancel := context.WithTimeout(parentCtx, 3*time.Second)
+			if err := database.UpdateClientLastHeard(updateCtx, tag, realtimeData.LastHeard); err != nil {
+				failed++
+				log.Error(fmt.Sprintf("Failed to write last heard for tag %d on app shutdown: %s", tag, err.Error()))
+				updateCancel()
+				continue
+			}
+			updateCancel()
+			succeeded++
 		}
-		cancel()
+
+		log.Info(fmt.Sprintf("Finished writing last-heard values on shutdown (attempted=%d succeeded=%d failed=%d)", attempted, succeeded, failed))
 	}
 
 	// Wait for shutdown signal or error
