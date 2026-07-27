@@ -2224,8 +2224,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			cpu_model = COALESCE(EXCLUDED.cpu_model, hardware_data.cpu_model),
 			cpu_core_count = COALESCE(EXCLUDED.cpu_core_count, hardware_data.cpu_core_count),
 			cpu_thread_count = COALESCE(EXCLUDED.cpu_thread_count, hardware_data.cpu_thread_count),
-			tpm_version = COALESCE(EXCLUDED.tpm_version, hardware_data.tpm_version)
-			tpm_public_key = COALESCE(EXCLUDED.tpm_public_key, hardware_data.tpm_public_key)
+			tpm_version = COALESCE(EXCLUDED.tpm_version, hardware_data.tpm_version),
+			tpm_public_key = COALESCE(EXCLUDED.tpm_public_key, hardware_data.tpm_public_key),
 			ad_sid = COALESCE(EXCLUDED.ad_sid, hardware_data.ad_sid)
 	;`
 
