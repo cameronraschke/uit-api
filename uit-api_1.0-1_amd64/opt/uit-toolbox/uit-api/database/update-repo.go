@@ -2451,8 +2451,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_disk_encrypted,
 			admin_users,
 			computer_name,
-			ad_domain, 
-			ad_ou,
+			ad_domain,
 			ad_computer_name,
 			ad_distinguished_name,
 			is_intune_joined,
@@ -2482,9 +2481,8 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			$18,
 			$19,
 			$20,
-			$21,
-			$22::TEXT[],
-			$23
+			$21::TEXT[],
+			$22
 		) ON CONFLICT (client_uuid) DO UPDATE SET
 			time = EXCLUDED.time,
 			transaction_uuid = EXCLUDED.transaction_uuid,
@@ -2501,7 +2499,6 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			admin_users = EXCLUDED.admin_users,
 			computer_name = EXCLUDED.computer_name,
 			ad_domain = EXCLUDED.ad_domain,
-			ad_ou = EXCLUDED.ad_ou,
 			ad_computer_name = EXCLUDED.ad_computer_name,
 			ad_distinguished_name = EXCLUDED.ad_distinguished_name,
 			is_intune_joined = EXCLUDED.is_intune_joined,
@@ -2532,7 +2529,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		adminUsers,
 		ptrToNullString(windowsUpdateDTO.ComputerName),
 		ptrToNullString(windowsUpdateDTO.ADDomain),
-		ptrToNullString(windowsUpdateDTO.OUName),
+		// ptrToNullString(windowsUpdateDTO.OUName),
 		ptrToNullString(windowsUpdateDTO.ADComputerName),
 		ptrToNullString(windowsUpdateDTO.ADDistinguishedName),
 		ptrToNullBool(windowsUpdateDTO.IsIntuneJoined),
