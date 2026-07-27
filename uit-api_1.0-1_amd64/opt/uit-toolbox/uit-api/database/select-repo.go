@@ -304,18 +304,18 @@ func GetAllDomains(ctx context.Context) ([]types.AllDomainsRow, error) {
 
 	const sqlQuery = `
 		SELECT 
-			domain_name, 
-			domain_name_formatted,
-			domain_sort_order,
+			ou_name, 
+			ou_name_formatted,
+			ou_name_sort_order,
 			COUNT(*) AS "client_count"
-		FROM static_ad_domains
-		LEFT JOIN locations ON static_ad_domains.domain_name = locations.ad_domain
+		FROM static_ou_names
+		LEFT JOIN os_info ON static_ou_names.ou_name = os_info.ad_ou
 		GROUP BY
-			static_ad_domains.domain_name,
-			static_ad_domains.domain_name_formatted,
-			static_ad_domains.domain_sort_order
+			static_ou_names.ou_name,
+			static_ou_names.ou_name_formatted,
+			static_ou_names.ou_name_sort_order
 		ORDER BY 
-			domain_sort_order NULLS LAST
+			ou_name_sort_order NULLS LAST
 	;`
 
 	rows, err := pgxPool.Query(ctx, sqlQuery)
@@ -591,7 +591,7 @@ func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*type
 		hardware_data.system_model,
 		COALESCE(hardware_data.device_type, default_system_model.device_type) AS "device_type",
 		locations.department_name, 
-		locations.ad_domain, 
+		os_info.ad_ou, 
 		locations.property_custodian, 
 		locations.acquired_date,
 		locations.retired_date,
@@ -616,6 +616,7 @@ func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*type
 	LEFT JOIN most_recent_checkout ON ids.uuid = most_recent_checkout.client_uuid
 	WHERE ids.uuid = (SELECT uuid FROM ids WHERE (tagnumber = $1 OR system_serial = $2) ORDER BY time DESC LIMIT 1)
 	GROUP BY 
+		ids.uuid,
 		locations.time,
 		ids.tagnumber,
 		ids.system_serial,
@@ -627,7 +628,7 @@ func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*type
 		hardware_data.device_type,
 		default_system_model.device_type,
 		locations.department_name,
-		locations.ad_domain,
+		os_info.ad_ou,
 		locations.property_custodian,
 		locations.acquired_date,
 		locations.retired_date,
@@ -885,9 +886,9 @@ func GetInventoryTableData(ctx context.Context, filterOptions *types.InventoryAd
 	// AD Domain filter
 	if filterOptions.ADDomain != nil && strings.TrimSpace(*filterOptions.ADDomain.ParamValue) != "" {
 		if filterOptions.ADDomain.Not != nil && *filterOptions.ADDomain.Not {
-			whereClause = append(whereClause, fmt.Sprintf("NOT locations.ad_domain = $%d", i))
+			whereClause = append(whereClause, fmt.Sprintf("NOT os_info.ad_ou = $%d", i))
 		} else {
-			whereClause = append(whereClause, fmt.Sprintf("locations.ad_domain = $%d", i))
+			whereClause = append(whereClause, fmt.Sprintf("os_info.ad_ou = $%d", i))
 		}
 		whereArgs = append(whereArgs, strings.TrimSpace(*filterOptions.ADDomain.ParamValue))
 		i++
@@ -987,9 +988,9 @@ func GetInventoryTableData(ctx context.Context, filterOptions *types.InventoryAd
 			static_device_types.device_type_formatted, 
 			locations.department_name, 
 			static_department_info.department_name_formatted,
-			locations.ad_domain, 
+			os_info.ad_ou, 
 			os_info.is_intune_joined,
-			static_ad_domains.domain_name_formatted, 
+			static_ou_names.ou_name_formatted, 
 			os_installed_table.os_installed,
 			(CASE WHEN locations.disk_removed = TRUE THEN NULL ELSE COALESCE(os_info.os_name, os_installed_table.image_version) END) AS "os_name", 
 			(CASE WHEN locations.disk_removed = TRUE THEN NULL WHEN os_info.windows_build_number IS NOT NULL AND os_info.windows_ubr IS NOT NULL THEN CONCAT(os_info.windows_build_number, '.', os_info.windows_ubr) ELSE NULL END) AS "os_version",
@@ -1018,7 +1019,7 @@ func GetInventoryTableData(ctx context.Context, filterOptions *types.InventoryAd
 			LEFT JOIN hardware_data ON ids.uuid = hardware_data.client_uuid
 			LEFT JOIN client_health ON ids.uuid = client_health.client_uuid
 			LEFT JOIN static_department_info ON locations.department_name = static_department_info.department_name
-			LEFT JOIN static_ad_domains ON locations.ad_domain = static_ad_domains.domain_name
+			LEFT JOIN static_ou_names ON os_info.ad_ou = static_ou_names.ou_name
 			LEFT JOIN static_client_statuses ON locations.client_status = static_client_statuses.status_name
 			LEFT JOIN static_device_types ON hardware_data.device_type = static_device_types.device_type
 			LEFT JOIN files ON ids.uuid = files.client_uuid
@@ -1042,9 +1043,9 @@ func GetInventoryTableData(ctx context.Context, filterOptions *types.InventoryAd
 			static_device_types.device_type_formatted,
 			locations.department_name,
 			static_department_info.department_name_formatted,
-			locations.ad_domain,
+			os_info.ad_ou,
 			os_info.is_intune_joined,
-			static_ad_domains.domain_name_formatted,
+			static_ou_names.ou_name_formatted,
 			os_installed_table.os_installed,
 			os_installed_table.image_version,
 			os_info.os_name,
@@ -1400,11 +1401,11 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 			ELSE FALSE
 		END) AS "latest_image_installed",
 		(CASE 
-			WHEN locations.ad_domain IS NOT NULL AND NOT locations.ad_domain = 'none' THEN TRUE
+			WHEN os_info.ad_ou IS NOT NULL AND NOT os_info.ad_ou = 'none' THEN TRUE
 			ELSE FALSE
 		END) AS "domain_joined",
-		static_ad_domains.domain_name,
-		static_ad_domains.domain_name_formatted AS "ad_domain_formatted",
+		static_ou_names.ou_name,
+		static_ou_names.ou_name_formatted,
 		(CASE 
 			WHEN latest_firmware_data.bios_version = static_bios_stats.bios_version THEN TRUE
 			ELSE FALSE
@@ -1511,7 +1512,7 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 	LEFT JOIN live_os_data ON ids.uuid = live_os_data.client_uuid
 	LEFT JOIN static_bios_stats ON hardware_data.system_model = static_bios_stats.system_model
 	LEFT JOIN static_disk_stats ON latest_historical_disk_data.disk_model = static_disk_stats.disk_model
-	LEFT JOIN static_ad_domains ON locations.ad_domain = static_ad_domains.domain_name
+	LEFT JOIN static_ou_names ON os_info.ad_ou = static_ou_names.ou_name
 	LEFT JOIN static_image_names ON static_image_names.image_name = latest_completed_job.clone_image AND static_image_names.system_model = hardware_data.system_model
 	LEFT JOIN job_queue_positions_cte ON job_queue_positions_cte.client_uuid = ids.uuid
 	LEFT JOIN static_client_statuses ON static_client_statuses.status_name = locations.client_status
@@ -2176,7 +2177,8 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 		locations.building,
 		locations.room,
 		static_department_info.department_name_formatted,
-		static_ad_domains.domain_name_formatted AS "ou_name",
+		os_info.ad_ou,
+		static_ou_names.ou_name_formatted,
 		locations.property_custodian,
 		locations.acquired_date,
 		locations.retired_date,
@@ -2260,7 +2262,6 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 				building,
 				room,
 				department_name,
-				ad_domain,
 				property_custodian,
 				acquired_date,
 				retired_date,
@@ -2274,7 +2275,7 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 			LIMIT 1
 		) locations ON TRUE
 		LEFT JOIN static_department_info ON locations.department_name = static_department_info.department_name
-		LEFT JOIN static_ad_domains ON locations.ad_domain = static_ad_domains.domain_name
+		LEFT JOIN static_ou_names ON os_info.ad_ou = static_ou_names.ou_name
 		LEFT JOIN static_client_statuses ON locations.client_status = static_client_statuses.status_name
 		LEFT JOIN LATERAL (
 			SELECT

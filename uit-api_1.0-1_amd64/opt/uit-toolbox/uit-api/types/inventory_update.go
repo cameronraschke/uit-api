@@ -69,7 +69,7 @@ type InventoryLocationWriteModel struct {
 	Building          *string
 	Room              *string
 	Department        string
-	ADDomain          string
+	OUName            string
 	PropertyCustodian *string
 	AcquiredDate      *time.Time
 	RetiredDate       *time.Time
@@ -228,7 +228,7 @@ func (dto *InventoryUpdateDTO) ToLocationWriteModel(transactionUUID uuid.UUID) *
 		Building:          copyTrimmedStringPtr(dto.Building),
 		Room:              copyTrimmedStringPtr(dto.Room),
 		Department:        dto.Department,
-		ADDomain:          dto.ADDomain,
+		OUName:            dto.ADDomain,
 		PropertyCustodian: copyTrimmedStringPtr(dto.PropertyCustodian),
 		AcquiredDate:      copyTimePtrToUTC(dto.AcquiredDate),
 		RetiredDate:       copyTimePtrToUTC(dto.RetiredDate),

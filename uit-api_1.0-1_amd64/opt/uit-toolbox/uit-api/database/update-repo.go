@@ -382,20 +382,22 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	pgxPool, err := config.GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	tx, err := dbConn.BeginTx(ctx, nil)
+	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
-		} else {
-			err = tx.Commit()
+			_ = tx.Rollback(ctx)
+			return
+		}
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			err = commitErr
 		}
 	}()
 
@@ -415,12 +417,17 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		ON CONFLICT (tagnumber) DO NOTHING
 	;`
 
-	_, err = tx.ExecContext(ctx, idsSql,
+	_, err = tx.Exec(ctx, idsSql,
 		toNullInt64(inventoryUpdate.Tagnumber),
 		toNullString(inventoryUpdate.SystemSerial),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
+	}
+
+	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, inventoryUpdate.Tagnumber)
+	if err != nil {
+		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
 
 	// Update locations table
@@ -435,7 +442,6 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		building, 
 		room, 
 		department_name, 
-		ad_domain, 
 		property_custodian,  
 		acquired_date,
 		retired_date,
@@ -447,7 +453,6 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	VALUES (
 		CURRENT_TIMESTAMP,
 	 	$1, 
-		(SELECT uuid FROM ids WHERE tagnumber = $2 ORDER BY time DESC LIMIT 1), 
 		$2, 
 		$3, 
 		$4, 
@@ -465,16 +470,15 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	)
 	;`
 
-	var locationsLogResult sql.Result
-	locationsLogResult, err = tx.ExecContext(ctx, locationsLogSql,
+	locationsLogResult, err := tx.Exec(ctx, locationsLogSql,
 		transactionUUID,
+		toNullUUID(clientUUID),
 		toNullInt64(inventoryUpdate.Tagnumber),
 		toNullString(inventoryUpdate.SystemSerial),
 		toNullString(inventoryUpdate.Location),
 		ptrToNullString(inventoryUpdate.Building),
 		ptrToNullString(inventoryUpdate.Room),
 		toNullString(inventoryUpdate.Department),
-		toNullString(inventoryUpdate.ADDomain),
 		ptrToNullString(inventoryUpdate.PropertyCustodian),
 		ptrToNullTime(inventoryUpdate.AcquiredDate),
 		ptrToNullTime(inventoryUpdate.RetiredDate),
@@ -486,8 +490,8 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
-	if err := VerifyRowsAffected(locationsLogResult, 1); err != nil {
-		return err
+	if locationsLogResult.RowsAffected() != 1 {
+		return fmt.Errorf("%w: expected 1 row affected, got %d", types.DatabaseAffectedRowsError, locationsLogResult.RowsAffected())
 	}
 
 	const locationsSql = `
@@ -501,7 +505,6 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		building, 
 		room, 
 		department_name, 
-		ad_domain, 
 		property_custodian,  
 		acquired_date,
 		retired_date,
@@ -512,7 +515,6 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	) VALUES (
 		CURRENT_TIMESTAMP,
 	 	$1, 
-		(SELECT uuid FROM ids WHERE tagnumber = $2 ORDER BY time DESC LIMIT 1), 
 		$2, 
 		$3, 
 		$4, 
@@ -525,10 +527,9 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		$11, 
 		$12, 
 		$13, 
-		$14, 
-		$15
+		$14
 	) ON CONFLICT (client_uuid) DO UPDATE SET
-		time = CURRENT_TIMESTAMP,
+		time = EXCLUDED.time,
 		transaction_uuid = EXCLUDED.transaction_uuid,
 		tagnumber = EXCLUDED.tagnumber,
 		system_serial = EXCLUDED.system_serial,
@@ -536,7 +537,6 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		building = EXCLUDED.building,
 		room = EXCLUDED.room,
 		department_name = EXCLUDED.department_name,
-		ad_domain = EXCLUDED.ad_domain,
 		property_custodian = EXCLUDED.property_custodian,
 		acquired_date = EXCLUDED.acquired_date,
 		retired_date = EXCLUDED.retired_date,
@@ -546,16 +546,15 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		note = EXCLUDED.note
 	;`
 
-	var locationsResult sql.Result
-	locationsResult, err = tx.ExecContext(ctx, locationsSql,
+	locationsResult, err := tx.Exec(ctx, locationsSql,
 		transactionUUID,
+		toNullUUID(clientUUID),
 		toNullInt64(inventoryUpdate.Tagnumber),
 		toNullString(inventoryUpdate.SystemSerial),
 		toNullString(inventoryUpdate.Location),
 		ptrToNullString(inventoryUpdate.Building),
 		ptrToNullString(inventoryUpdate.Room),
 		toNullString(inventoryUpdate.Department),
-		toNullString(inventoryUpdate.ADDomain),
 		ptrToNullString(inventoryUpdate.PropertyCustodian),
 		ptrToNullTime(inventoryUpdate.AcquiredDate),
 		ptrToNullTime(inventoryUpdate.RetiredDate),
@@ -567,8 +566,40 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
-	if err := VerifyRowsAffected(locationsResult, 1); err != nil {
-		return err
+	if locationsResult.RowsAffected() != 1 {
+		return fmt.Errorf("%w: expected 1 row affected, got %d", types.DatabaseAffectedRowsError, locationsResult.RowsAffected())
+	}
+
+	const osInfoSql = `
+	INSERT INTO os_info (
+		client_uuid,
+		transaction_uuid,
+		time,
+		updated_from_windows,
+		ad_ou
+	) VALUES (
+		$1,
+		$2,
+		CURRENT_TIMESTAMP,
+		FALSE,
+		$3
+	) ON CONFLICT (client_uuid) DO UPDATE SET
+		transaction_uuid = EXCLUDED.transaction_uuid,
+		time = EXCLUDED.time,
+		updated_from_windows = EXCLUDED.updated_from_windows,
+		ad_ou = EXCLUDED.ad_ou
+	;`
+
+	osInfoResult, err := tx.Exec(ctx, osInfoSql,
+		toNullUUID(clientUUID),
+		transactionUUID,
+		toNullString(inventoryUpdate.OUName),
+	)
+	if err != nil {
+		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
+	}
+	if osInfoResult.RowsAffected() != 1 {
+		return fmt.Errorf("%w: expected 1 row affected, got %d", types.DatabaseAffectedRowsError, osInfoResult.RowsAffected())
 	}
 
 	return nil
@@ -1998,7 +2029,6 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 		is_broken,
 		disk_removed,
 		department_name,
-		ad_domain,
 		note,
 		client_status,
 		building,
@@ -2018,7 +2048,6 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 		locations.is_broken,
 		locations.disk_removed,
 		locations.department_name,
-		locations.ad_domain,
 		locations.note,
 		locations.client_status,
 		locations.building,
@@ -2059,7 +2088,6 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 		is_broken,
 		disk_removed,
 		department_name,
-		ad_domain,
 		note,
 		client_status,
 		building,
@@ -2079,7 +2107,6 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 		locations.is_broken,
 		locations.disk_removed,
 		locations.department_name,
-		locations.ad_domain,
 		locations.note,
 		locations.client_status,
 		locations.building,
@@ -2105,7 +2132,6 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 	 is_broken = COALESCE(EXCLUDED.is_broken, locations.is_broken),
 	 disk_removed = COALESCE(EXCLUDED.disk_removed, locations.disk_removed),
 	 department_name = COALESCE(EXCLUDED.department_name, locations.department_name),
-	 ad_domain = COALESCE(EXCLUDED.ad_domain, locations.ad_domain),
 	 note = COALESCE(EXCLUDED.note, locations.note),
 	 building = COALESCE(EXCLUDED.building, locations.building),
 	 room = COALESCE(EXCLUDED.room, locations.room),
@@ -2439,7 +2465,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_disk_encrypted,
 			admin_users,
 			computer_name,
-			ad_domain,
+			ad_ou,
 			ad_computer_name,
 			ad_distinguished_name,
 			is_intune_joined,
@@ -2487,7 +2513,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 			is_disk_encrypted = EXCLUDED.is_disk_encrypted,
 			admin_users = EXCLUDED.admin_users,
 			computer_name = EXCLUDED.computer_name,
-			ad_domain = EXCLUDED.ad_domain,
+			ad_ou = EXCLUDED.ad_ou,
 			ad_computer_name = EXCLUDED.ad_computer_name,
 			ad_distinguished_name = EXCLUDED.ad_distinguished_name,
 			is_intune_joined = EXCLUDED.is_intune_joined,
