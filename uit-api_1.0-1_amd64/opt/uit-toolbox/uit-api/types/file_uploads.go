@@ -2,6 +2,8 @@ package types
 
 import "time"
 
+type LiveScreenshotUploadRequest []byte
+
 type ImageManifestDTO struct {
 	Time              time.Time  `json:"time"`
 	Tagnumber         int64      `json:"tagnumber"`
