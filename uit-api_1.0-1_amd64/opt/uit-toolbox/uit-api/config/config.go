@@ -814,8 +814,9 @@ func GetLiveImage(tag int64) ([]byte, error) {
 		return nil, fmt.Errorf("%w: live image not found for tag %d", types.LiveImageMissingError, tag)
 	}
 
+	// fmt.Printf("Retrieved live image for tag %d, size: %.2fMB\n", tag, float64(len(val.LiveImageBytes))/1024/1024)
 	liveImage := val.LiveImageBytes
-	if liveImage == nil {
+	if len(liveImage) == 0 {
 		as.ClientRealtimeDataMu.RUnlock()
 		// return nil, fmt.Errorf("live image bytes are nil for tag %d", tag)
 		return nil, nil
@@ -839,7 +840,7 @@ func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {
 	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
-	if len(imageBytes) == 0 || len(imageBytes) > types.MaxLiveImageBytes {
+	if len(imageBytes) <= 0 || len(imageBytes) > types.MaxLiveImageBytes {
 		return fmt.Errorf("size of live image is out of range: %.2fMB", float64(len(imageBytes))/1024/1024)
 	}
 	as, err := GetAppState()
@@ -852,6 +853,7 @@ func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {
 	copy(newImage, imageBytes)
 	as.ClientRealtimeDataMu.Lock()
 	defer as.ClientRealtimeDataMu.Unlock()
+	// fmt.Printf("Updating live image for tag %d, size: %.2fMB\n", tag, float64(len(newImage))/1024/1024)
 	clientData := as.ClientRealtimeData[tag]
 	clientData.Tagnumber = tag
 	clientData.LiveImageBytes = newImage

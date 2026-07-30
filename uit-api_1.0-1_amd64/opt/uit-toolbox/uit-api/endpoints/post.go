@@ -560,6 +560,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 			middleware.WriteJsonError(w, http.StatusNotFound)
 			return
 		}
+		log.Info(fmt.Sprintf("updating client UUID '%s' for tag '%d' from database", clientUUID.String(), lastHeardData.Tagnumber))
 		if err := config.SetRealtimeClientUUID(lastHeardData.Tagnumber, clientUUID); err != nil {
 			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientUUID", err))
 			middleware.WriteJsonError(w, http.StatusInternalServerError)
@@ -1667,7 +1668,7 @@ func UploadLiveImage(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if len(body) == 0 {
+	if len(body) <= 0 {
 		log.Warn("Request body is empty")
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
