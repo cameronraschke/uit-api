@@ -34,7 +34,7 @@ type WindowsUpdateRequest struct {
 	BIOSVersion               *string          `json:"bios_version"`
 	BIOSReleaseDate           *string          `json:"bios_release_date"` // Converted later
 	TPMVersion                *string          `json:"tpm_version"`
-	TPMPublicKeyHash          *string          `json:"tpm_public_key_hash"`
+	TPMPublicKeyHash          *string          `json:"tpm_public_key"`
 	SecureBootEnabled         *bool            `json:"secure_boot_enabled"`
 	OSInstalledAt             *string          `json:"os_installed_at"` // Converted later
 	OSVendor                  *string          `json:"os_vendor"`
