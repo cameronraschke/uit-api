@@ -119,26 +119,23 @@ func copyBoolPtr(value *bool) *bool {
 	return &v
 }
 
-func IsSystemSerialValid(s *string) error {
-	if s == nil || strings.TrimSpace(*s) == "" {
+func IsSystemSerialValid(s string) error {
+	if strings.TrimSpace(s) == "" {
 		return fmt.Errorf("system serial is empty or nil")
 	}
 	// Check length constraints, max length check does not trim spaces
-	if utf8.RuneCountInString(*s) > maxSystemSerialLength ||
-		utf8.RuneCountInString(strings.TrimSpace(*s)) < minSystemSerialLength {
+	if utf8.RuneCountInString(s) > maxSystemSerialLength ||
+		utf8.RuneCountInString(strings.TrimSpace(s)) < minSystemSerialLength {
 		return fmt.Errorf("system serial must be between %d and %d characters", minSystemSerialLength, maxSystemSerialLength)
 	}
-	if !IsPrintableASCII([]byte(*s)) {
+	if !IsPrintableASCII([]byte(s)) {
 		return fmt.Errorf("non-printable ASCII characters in system serial field")
 	}
 	return nil
 }
 
-func IsTagnumberInt64Valid(i *int64) error {
-	if i == nil {
-		return fmt.Errorf("tagnumber is nil")
-	}
-	if *i < minTagnumberValue || *i > maxTagnumberValue {
+func IsTagnumberInt64Valid(i int64) error {
+	if i < minTagnumberValue || i > maxTagnumberValue {
 		return fmt.Errorf("tagnumber is out of valid numeric range")
 	}
 	return nil
@@ -159,7 +156,7 @@ func IsTagnumberStringValid(str string) error {
 	if err != nil {
 		return fmt.Errorf("tagnumber cannot be parsed as int64: %v", err)
 	}
-	if err := IsTagnumberInt64Valid(&parsedInt); err != nil {
+	if err := IsTagnumberInt64Valid(parsedInt); err != nil {
 		return fmt.Errorf("tagnumber is not valid after parsing as int64: %v", err)
 	}
 	return nil
@@ -175,7 +172,7 @@ func ConvertAndVerifyTagnumber(tagStr string) (*int64, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse tagnumber: %v", err)
 	}
-	validInt64Err := IsTagnumberInt64Valid(&tag)
+	validInt64Err := IsTagnumberInt64Valid(tag)
 	if validInt64Err != nil {
 		return nil, fmt.Errorf("invalid tagnumber: %v", validInt64Err)
 	}

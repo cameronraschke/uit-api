@@ -1,11 +1,11 @@
 package endpoints
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"uit-api/database"
 	"uit-api/middleware"
@@ -34,14 +34,14 @@ func DeleteImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	fileUUID := middleware.GetStrQuery(req.URL.Query(), "file_uuid")
-	if fileUUID == nil || strings.TrimSpace(*fileUUID) == "" {
+	if strings.TrimSpace(fileUUID) == "" {
 		log.Warn("Invalid file_uuid query parameter")
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// Get filepath from uuid
-	imageManifest, err := database.GetClientImageManifestByFileUUID(req.Context(), *fileUUID)
+	imageManifest, err := database.GetClientImageManifestByFileUUID(req.Context(), fileUUID)
 	if err != nil {
 		log.Error("Error retrieving image manifest: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
@@ -49,46 +49,46 @@ func DeleteImage(w http.ResponseWriter, req *http.Request) {
 	}
 	// Check for a non-nil response from DB
 	if imageManifest == nil {
-		log.Warn("No image manifest found for provided uuid: " + *fileUUID)
+		log.Warn("No image manifest found for provided uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	// client UUID
 	if imageManifest.ClientUUID == nil || strings.TrimSpace(*imageManifest.ClientUUID) == "" {
-		log.Warn("No client UUID found in image manifest for provided file uuid: " + *fileUUID)
+		log.Warn("No client UUID found in image manifest for provided file uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	clientUUIDFromManifest := strings.TrimSpace(*imageManifest.ClientUUID)
 	if clientUUIDFromManifest != clientUUID.String() {
-		log.Warn("Client UUID from manifest does not match client_uuid query parameter for provided file uuid: " + *fileUUID)
+		log.Warn("Client UUID from manifest does not match client_uuid query parameter for provided file uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// file uuid
 	if imageManifest.FileUUID == nil || strings.TrimSpace(*imageManifest.FileUUID) == "" {
-		log.Warn("No file found in image manifest for provided file uuid: " + *fileUUID)
+		log.Warn("No file found in image manifest for provided file uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	fileUUIDFromManifest := strings.TrimSpace(*imageManifest.FileUUID)
-	if fileUUIDFromManifest != *fileUUID {
-		log.Warn("File UUID from manifest does not match file_uuid query parameter for provided file uuid: " + *fileUUID)
+	if fileUUIDFromManifest != fileUUID {
+		log.Warn("File UUID from manifest does not match file_uuid query parameter for provided file uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// file name
 	if imageManifest.FileName == nil || strings.TrimSpace(*imageManifest.FileName) == "" {
-		log.Warn("No file name found in image manifest for provided file uuid: " + *fileUUID)
+		log.Warn("No file name found in image manifest for provided file uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	fileNameFromManifest := strings.TrimSpace(*imageManifest.FileName)
 	if fileNameFromManifest == "" {
-		log.Warn("File name is empty in image manifest for provided file uuid: " + *fileUUID)
+		log.Warn("File name is empty in image manifest for provided file uuid: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
@@ -99,7 +99,7 @@ func DeleteImage(w http.ResponseWriter, req *http.Request) {
 	imageFile, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Warn("No image file found for provided file uuid: " + *fileUUID)
+			log.Warn("No image file found for provided file uuid: " + fileUUID)
 			middleware.WriteJsonError(w, http.StatusNotFound)
 			return
 		}
@@ -108,7 +108,7 @@ func DeleteImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if imageFile == nil {
-		log.Warn("No image found for provided uuid and file name: " + *fileUUID)
+		log.Warn("No image found for provided uuid and file name: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
@@ -121,17 +121,17 @@ func DeleteImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if fileMetadata.IsDir() {
-		log.Warn("Resolved image file path is a directory for provided uuid and file name: " + *fileUUID)
+		log.Warn("Resolved image file path is a directory for provided uuid and file name: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	if fileMetadata.Size() == 0 {
-		log.Warn("Resolved image file is empty for provided uuid and file name: " + *fileUUID)
+		log.Warn("Resolved image file is empty for provided uuid and file name: " + fileUUID)
 		// middleware.WriteJsonError(w, http.StatusNotFound)
 		// return
 	}
 	if !fileMetadata.Mode().IsRegular() {
-		log.Warn("Resolved image file is not a regular file for provided uuid and file name: " + *fileUUID)
+		log.Warn("Resolved image file is not a regular file for provided uuid and file name: " + fileUUID)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
@@ -167,61 +167,43 @@ func DeleteImage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	if err := database.HideClientImageByUUID(req.Context(), *fileUUID); err != nil {
-		log.Error("DB error while deleting client image with UUID '" + *fileUUID + "': " + err.Error())
+	if err := database.HideClientImageByUUID(req.Context(), fileUUID); err != nil {
+		log.Error("DB error while deleting client image with UUID '" + fileUUID + "': " + err.Error())
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	log.Info("Successfully deleted client image with UUID '" + *fileUUID + "'")
+	log.Info("Successfully deleted client image with UUID '" + fileUUID + "'")
 	middleware.WriteJson(w, http.StatusOK, map[string]string{"message": "Image deleted successfully"})
 }
 
 func DeleteOSInfoByTagnumber(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "DeleteOSInfoByTagnumber"))
 
-	querySerialValPtr := middleware.GetStrQuery(req.URL.Query(), "system_serial")
-	if querySerialValPtr == nil || strings.TrimSpace(*querySerialValPtr) == "" {
+	querySerialVal := middleware.GetStrQuery(req.URL.Query(), "system_serial")
+	if querySerialVal == "" {
 		log.Warn("No system_serial query key provided")
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := types.IsSystemSerialValid(querySerialValPtr); err != nil {
+	if err := types.IsSystemSerialValid(querySerialVal); err != nil {
 		log.Warn("Invalid system_serial query parameter: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	queryTagValPtr := middleware.GetStrQuery(req.URL.Query(), "tagnumber")
-	if queryTagValPtr == nil || strings.TrimSpace(*queryTagValPtr) == "" {
-		log.Warn("No tagnumber query key provided")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(*queryTagValPtr) == "" {
-		log.Warn("No tagnumber query key provided")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	queryTagVal := strings.TrimSpace(*queryTagValPtr)
-	tagnumber, err := strconv.ParseInt(queryTagVal, 10, 64)
-	if err != nil {
-		log.Warn("Invalid tagnumber query parameter: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-
-	if err := types.IsTagnumberInt64Valid(&tagnumber); err != nil {
+	queryTagVal := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	if err := types.IsTagnumberInt64Valid(queryTagVal); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := database.DeleteOSInfoByTagnumber(req.Context(), tagnumber, *querySerialValPtr); err != nil {
-		log.Error("error deleting OS info for tagnumber '" + queryTagVal + "': " + err.Error())
+	if err := database.DeleteOSInfoByTagnumber(req.Context(), queryTagVal, querySerialVal); err != nil {
+		log.Error(fmt.Sprintf("error deleting OS info for tagnumber '%d': %v", queryTagVal, err.Error()))
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	log.Info("successfully deleted OS info for tagnumber '" + queryTagVal + "'")
+	log.Info(fmt.Sprintf("successfully deleted OS info for '%d'", queryTagVal))
 }

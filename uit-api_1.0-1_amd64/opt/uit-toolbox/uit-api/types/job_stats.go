@@ -9,8 +9,8 @@ import (
 
 type UpdateJobStatsRequest struct {
 	TransactionUUID string     `json:"transaction_uuid"`
-	Tagnumber       *int64     `json:"tagnumber"`
-	SystemSerial    *string    `json:"system_serial"`
+	Tagnumber       int64      `json:"tagnumber"`
+	SystemSerial    string     `json:"system_serial"`
 	JobStartTime    *time.Time `json:"job_start_time"`
 	DiskName        *string    `json:"disk_name"`
 	JobCancelled    *bool      `json:"job_cancelled"`
@@ -58,13 +58,13 @@ func (req *UpdateJobStatsRequest) ToDTO() (*JobStatsDTO, error) {
 	if err := IsTagnumberInt64Valid(req.Tagnumber); err != nil {
 		return nil, fmt.Errorf("invalid tagnumber: %w", err)
 	}
-	dto.Tagnumber = *req.Tagnumber
+	dto.Tagnumber = req.Tagnumber
 
 	// system serial
-	if req.SystemSerial == nil || strings.TrimSpace(*req.SystemSerial) == "" {
+	if req.SystemSerial == "" {
 		return nil, fmt.Errorf("system serial is required")
 	}
-	dto.SystemSerial = *req.SystemSerial
+	dto.SystemSerial = req.SystemSerial
 
 	// job start time
 	if req.JobStartTime != nil {

@@ -50,7 +50,7 @@ func NewSelectRepo() (Select, error) {
 var _ Select = (*SelectRepo)(nil)
 
 func GetClientUUIDByTag(ctx context.Context, pgxPool *pgxpool.Pool, tagnumber int64) (clientUUID uuid.UUID, err error) {
-	if err := types.IsTagnumberInt64Valid(&tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		return uuid.Nil, fmt.Errorf("tagnumber is nil or invalid: %w", err)
 	}
 	if pgxPool == nil {
@@ -171,23 +171,22 @@ func SelectAllIDs(ctx context.Context) ([]types.ClientLookupRow, error) {
 	return globalLookupRow, nil
 }
 
-func ClientIDLookup(ctx context.Context, tag *int64, serial *string) (*types.ClientLookupRow, error) {
+func ClientIDLookup(ctx context.Context, tag int64, serial string) (*types.ClientLookupRow, error) {
 	var tagErr error
 	var serialErr error
 	whereClause := "WHERE ids.uuid IS NOT NULL "
 	whereArgs := make([]any, 0, 2)
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		tagErr = fmt.Errorf("tagnumber is nil or invalid: %w", err)
+		tagErr = fmt.Errorf("tagnumber is invalid: %w", err)
 	} else {
-		whereArgs = append(whereArgs, *tag)
+		whereArgs = append(whereArgs, tag)
 		whereClause += fmt.Sprintf("AND ids.tagnumber = $%d ", len(whereArgs))
 	}
 
-	if serial == nil || strings.TrimSpace(*serial) == "" {
-		serialErr = fmt.Errorf("system serial is nil or empty")
+	if err := types.IsSystemSerialValid(serial); err != nil {
+		serialErr = fmt.Errorf("system serial is invalid: %w", err)
 	} else {
-		trimmedSerial := strings.TrimSpace(*serial)
-		whereArgs = append(whereArgs, trimmedSerial)
+		whereArgs = append(whereArgs, serial)
 		whereClause += fmt.Sprintf("AND ids.system_serial = $%d ", len(whereArgs))
 	}
 
@@ -468,7 +467,7 @@ func (repo *SelectRepo) CheckAuthCredentials(ctx context.Context, username *stri
 	return true, &dbBcryptHash.String, nil
 }
 
-func SelectIsClientJobAvailable(ctx context.Context, tag *int64) (*bool, error) {
+func SelectIsClientJobAvailable(ctx context.Context, tag int64) (*bool, error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
 	}
@@ -490,7 +489,7 @@ func SelectIsClientJobAvailable(ctx context.Context, tag *int64) (*bool, error) 
 		job_queue.client_uuid = (SELECT uuid FROM ids WHERE tagnumber = $1 ORDER BY time DESC LIMIT 1)`
 
 	var jobAvailable bool
-	row := dbConn.QueryRowContext(ctx, sqlQuery, ptrToNullInt64(tag))
+	row := dbConn.QueryRowContext(ctx, sqlQuery, toNullInt64(tag))
 	if err := row.Scan(&jobAvailable); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -500,8 +499,8 @@ func SelectIsClientJobAvailable(ctx context.Context, tag *int64) (*bool, error) 
 	return &jobAvailable, nil
 }
 
-func GetNotes(ctx context.Context, noteType *string) (*types.GeneralNoteResponse, error) {
-	if noteType == nil || strings.TrimSpace(*noteType) == "" {
+func GetNotes(ctx context.Context, noteType string) (*types.GeneralNoteResponse, error) {
+	if strings.TrimSpace(noteType) == "" {
 		return nil, fmt.Errorf("%w: %s", types.InvalidFieldError, "noteType is nil or empty")
 	}
 
@@ -523,7 +522,7 @@ func GetNotes(ctx context.Context, noteType *string) (*types.GeneralNoteResponse
 
 	generalNoteRow := new(types.GeneralNoteResponse)
 	row := pgxPool.QueryRow(ctx, sqlQuery,
-		ptrToNullString(noteType),
+		toNullString(noteType),
 	)
 	if err := row.Scan(
 		&generalNoteRow.Time,
@@ -538,7 +537,7 @@ func GetNotes(ctx context.Context, noteType *string) (*types.GeneralNoteResponse
 	return generalNoteRow, nil
 }
 
-func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*types.InventoryFormPrefillRow, error) {
+func GetLocationFormData(ctx context.Context, tag int64, serial string) (*types.InventoryFormPrefillRow, error) {
 	tagErr := types.IsTagnumberInt64Valid(tag)
 	serialErr := types.IsSystemSerialValid(serial)
 
@@ -650,8 +649,8 @@ func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*type
 	LIMIT 1;`
 
 	row := pgxPool.QueryRow(ctx, sqlQuery,
-		ptrToNullInt64(tag),
-		ptrToNullString(serial),
+		toNullInt64(tag),
+		toNullString(serial),
 	)
 
 	inventoryFormPrefillRow := new(types.InventoryFormPrefillRow)
@@ -689,7 +688,7 @@ func GetLocationFormData(ctx context.Context, tag *int64, serial *string) (*type
 	return inventoryFormPrefillRow, nil
 }
 
-func GetClientImageManifestByTag(ctx context.Context, tagnumber *int64) ([]types.ImageManifestResponse, error) {
+func GetClientImageManifestByTag(ctx context.Context, tagnumber int64) ([]types.ImageManifestResponse, error) {
 	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 	}
@@ -1157,8 +1156,14 @@ func ModifyClientConfigErrorResults(results []types.InventoryTableRow) ([]types.
 	// Set client configuration errors
 	for i := range results {
 		// If client is missing required info in the DB
-		tagErr := types.IsTagnumberInt64Valid(results[i].Tagnumber)
-		serialErr := types.IsSystemSerialValid(results[i].SystemSerial)
+		var tagErr error
+		var serialErr error
+		if results[i].Tagnumber != nil {
+			tagErr = types.IsTagnumberInt64Valid(*results[i].Tagnumber)
+		}
+		if results[i].SystemSerial != nil {
+			serialErr = types.IsSystemSerialValid(*results[i].SystemSerial)
+		}
 
 		if tagErr != nil ||
 			serialErr != nil ||
@@ -1841,7 +1846,7 @@ func GetAllDeviceTypes(ctx context.Context) ([]types.AllDeviceTypesRow, error) {
 }
 
 func GetClientHardwareOverview(ctx context.Context, tag int64) ([]types.ClientHardwareView, error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 	}
 	const sqlQuery = `
@@ -1908,7 +1913,7 @@ func GetClientHardwareOverview(ctx context.Context, tag int64) ([]types.ClientHa
 
 func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 	const queuePositionMaxValue int64 = 1_000_000
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return queuePositionMaxValue, err
 	}
 
@@ -1984,7 +1989,7 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 }
 
 func GetJobName(ctx context.Context, tag int64) (*string, error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 	}
 
@@ -2104,7 +2109,7 @@ func GetAllBuildingsAndRooms(ctx context.Context) ([]types.AllBuildingsAndRooms,
 	return allBuildingsAndRooms, nil
 }
 
-func SelectCheckoutData(ctx context.Context, tag *int64) (*types.CheckoutLogResponse, error) {
+func SelectCheckoutData(ctx context.Context, tag int64) (*types.CheckoutLogResponse, error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, err
 	}
@@ -2129,7 +2134,7 @@ func SelectCheckoutData(ctx context.Context, tag *int64) (*types.CheckoutLogResp
 
 	var checkoutLogRow types.CheckoutLogResponse
 	row := dbConn.QueryRowContext(ctx, sqlQuery,
-		ptrToNullInt64(tag),
+		toNullInt64(tag),
 	)
 	rowScanErr := row.Scan(
 		&checkoutLogRow.Tagnumber,
@@ -2148,7 +2153,7 @@ func SelectCheckoutData(ctx context.Context, tag *int64) (*types.CheckoutLogResp
 }
 
 func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse, error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 	}
 
@@ -2565,7 +2570,7 @@ func ConvertClientInfoToCSV(ctx context.Context, tags []int64) (*bytes.Buffer, e
 	var dbQueryData []types.ClientInfoResponse
 	buf.Grow(len(dbQueryData) * 200) // Grow by 200 bytes before another allocation
 	for _, tag := range tags {
-		if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+		if err := types.IsTagnumberInt64Valid(tag); err != nil {
 			return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 		}
 

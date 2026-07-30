@@ -10,8 +10,8 @@ import (
 
 // Request model for ingress of form data
 type InventoryUpdateRequest struct {
-	Tagnumber          *int64     `json:"tagnumber"`
-	SystemSerial       *string    `json:"system_serial"`
+	Tagnumber          int64     `json:"tagnumber"`
+	SystemSerial       string    `json:"system_serial"`
 	Location           *string    `json:"location"`
 	Building           *string    `json:"building"`
 	Room               *string    `json:"room"`
@@ -189,8 +189,8 @@ func (updateRequest *InventoryUpdateRequest) ToDTO(htmlFormConstraints *HTMLForm
 	}
 
 	domain := &InventoryUpdateDTO{
-		Tagnumber:          *updateRequest.Tagnumber,
-		SystemSerial:       strings.TrimSpace(*updateRequest.SystemSerial),
+		Tagnumber:          updateRequest.Tagnumber,
+		SystemSerial:       strings.TrimSpace(updateRequest.SystemSerial),
 		Location:           strings.TrimSpace(*updateRequest.Location),
 		Building:           copyTrimmedStringPtr(updateRequest.Building),
 		Room:               copyTrimmedStringPtr(updateRequest.Room),

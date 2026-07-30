@@ -283,45 +283,45 @@ func checkQueryKey(queries url.Values, key string) error {
 	}
 	return nil
 }
-func GetStrQuery(queries url.Values, key string) *string {
+func GetStrQuery(queries url.Values, key string) string {
 	trimmedKey := strings.TrimSpace(key)
 	if err := checkQueryKey(queries, trimmedKey); err != nil {
-		return nil
+		return ""
 	}
 	val := strings.TrimSpace(queries.Get(trimmedKey))
 	if val == "" {
-		return nil
+		return ""
 	}
-	return &val
+	return ""
 }
 func GetUUIDFromQuery(queries url.Values, key string) (*uuid.UUID, error) {
 	strVal := GetStrQuery(queries, key)
-	if strVal == nil {
+	if strVal == "" {
 		return nil, fmt.Errorf("query key '%s' not found or empty", key)
 	}
-	parsedUUID, err := uuid.Parse(*strVal)
+	parsedUUID, err := uuid.Parse(strVal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse UUID from query key '%s': %w", key, err)
 	}
 	return &parsedUUID, nil
 }
-func GetInt64Query(queries url.Values, key string) *int64 {
+func GetInt64Query(queries url.Values, key string) int64 {
 	strVal := GetStrQuery(queries, key)
-	if strVal == nil {
-		return nil
+	if strVal == "" {
+		return 0
 	}
-	intVal, err := strconv.ParseInt(*strVal, 10, 64)
+	intVal, err := strconv.ParseInt(strVal, 10, 64)
 	if err != nil {
-		return nil
+		return 0
 	}
-	return &intVal
+	return intVal
 }
 func GetBoolQuery(queries url.Values, key string) *bool {
 	strVal := GetStrQuery(queries, key)
-	if strVal == nil {
+	if strVal == "" {
 		return nil
 	}
-	boolVal, err := strconv.ParseBool(*strVal)
+	boolVal, err := strconv.ParseBool(strVal)
 	if err != nil {
 		return nil
 	}

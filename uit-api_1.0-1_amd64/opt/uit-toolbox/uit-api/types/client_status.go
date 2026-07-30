@@ -62,7 +62,7 @@ func (request *ClientHealthUpdateRequest) ToDTO() (*ClientHealthDTO, error) {
 	if request == nil {
 		return nil, fmt.Errorf("nil input")
 	}
-	if err := IsTagnumberInt64Valid(&request.Tagnumber); err != nil {
+	if err := IsTagnumberInt64Valid(request.Tagnumber); err != nil {
 		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", err)
 	}
 	if strings.TrimSpace(request.TransactionUUID) == "" {

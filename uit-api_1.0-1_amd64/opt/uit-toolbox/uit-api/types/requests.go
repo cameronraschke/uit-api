@@ -141,7 +141,10 @@ func (request *WindowsUpdateRequest) ToDTO() (*WindowsUpdateDTO, error) {
 		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "timestamp", "timestamp is required")
 	}
 
-	if err := IsTagnumberInt64Valid(request.RequestMetadata.Tagnumber); err != nil {
+	if request.RequestMetadata.Tagnumber == nil {
+		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", "tagnumber is required")
+	}
+	if err := IsTagnumberInt64Valid(*request.RequestMetadata.Tagnumber); err != nil {
 		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", err)
 	}
 
@@ -280,10 +283,16 @@ func (req *ClientInitRequest) ToDTO() (*ClientInitDTO, error) {
 	if req == nil {
 		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "request", "request cannot be nil")
 	}
-	if err := IsTagnumberInt64Valid(req.Tagnumber); err != nil {
+	if req.Tagnumber == nil {
+		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", "tagnumber is required")
+	}
+	if err := IsTagnumberInt64Valid(*req.Tagnumber); err != nil {
 		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", err)
 	}
-	if err := IsSystemSerialValid(req.SystemSerial); err != nil {
+	if req.SystemSerial == nil {
+		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "system_serial", "system_serial is required")
+	}
+	if err := IsSystemSerialValid(*req.SystemSerial); err != nil {
 		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "system_serial", err)
 	}
 	if req.TransactionUUID == nil || strings.TrimSpace(*req.TransactionUUID) == "" {

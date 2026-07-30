@@ -48,9 +48,11 @@ func decodeMaybeBase64URLJSON(raw string) ([]byte, error) {
 // Per-client functions
 func GetServerTime(w http.ResponseWriter, req *http.Request) {
 	format := middleware.GetStrQuery(req.URL.Query(), "format")
-	curTime := time.Now().Format(time.RFC3339)
-	if format != nil && *format == "unix" {
+	var curTime string
+	if format == "unix" {
 		curTime = time.Now().Format(time.UnixDate)
+	} else {
+		curTime = time.Now().Format(time.RFC3339)
 	}
 	middleware.WriteJson(w, http.StatusOK, ServerTime{Time: curTime})
 }
@@ -59,8 +61,10 @@ func GetClientIDs(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetClientIDs"))
 
 	// Need either tag or serial, tag is preferred if both are provided
-	var tagnumber, tagErr = types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
-	var systemSerial = middleware.GetStrQuery(req.URL.Query(), "system_serial")
+	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	tagErr := types.IsTagnumberInt64Valid(tagnumber)
+
+	systemSerial := middleware.GetStrQuery(req.URL.Query(), "system_serial")
 	serialErr := types.IsSystemSerialValid(systemSerial)
 
 	if tagErr != nil && serialErr != nil {
@@ -120,11 +124,9 @@ func GetAllClientIDs(w http.ResponseWriter, req *http.Request) {
 
 func IsClientJobAvailable(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "IsClientJobAvailable"))
-	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
-	if err != nil {
-		log.Warn("Invalid tagnumber provided in IsClientJobAvailable: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
-		return
+	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
+		log.Warn("Invalid tagnumber provided: " + err.Error())
 	}
 
 	availableJobs, err := database.SelectIsClientJobAvailable(req.Context(), tagnumber)
@@ -140,10 +142,10 @@ func GetNotes(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetNotes"))
 	noteType := middleware.GetStrQuery(req.URL.Query(), "note_type")
-	if noteType == nil || strings.TrimSpace(*noteType) == "" {
+	if strings.TrimSpace(noteType) == "" {
 		log.Info("No note_type provided, defaulting to 'general'")
 		defaultNoteType := "general"
-		noteType = &defaultNoteType
+		noteType = defaultNoteType
 	}
 
 	notesData, err := database.GetNotes(ctx, noteType)
@@ -158,10 +160,11 @@ func GetNotes(w http.ResponseWriter, req *http.Request) {
 func GetLocationFormData(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetLocationFormData"))
 
-	serial := middleware.GetStrQuery(req.URL.Query(), "system_serial")
 	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
 	tagErr := types.IsTagnumberInt64Valid(tagnumber)
-	if tagErr != nil && (serial == nil || strings.TrimSpace(*serial) == "") {
+	serial := middleware.GetStrQuery(req.URL.Query(), "system_serial")
+	serialErr := types.IsSystemSerialValid(serial)
+	if tagErr != nil && serialErr != nil {
 		log.Warn("Missing/invalid tagnumber and system_serial provided")
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
@@ -179,10 +182,9 @@ func GetLocationFormData(w http.ResponseWriter, req *http.Request) {
 func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetClientImagesManifest"))
-	requestQueries := req.URL.Query()
-	tagnumber, err := types.ConvertAndVerifyTagnumber(requestQueries.Get("tagnumber"))
-	if err != nil {
-		log.Warn("Invalid tagnumber provided in request to GetClientImagesManifest: " + err.Error())
+	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
+		log.Warn("Invalid tagnumber provided: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -207,7 +209,7 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if len(imageManifests) == 0 {
-		log.Warn("No image manifest data for client: " + fmt.Sprintf("%d", *tagnumber))
+		log.Warn("No image manifest data for client: " + fmt.Sprintf("%d", tagnumber))
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
@@ -216,7 +218,7 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 	for _, imageManifest := range imageManifests {
 		var responseManifest = new(types.ImageManifestResponse)
 		if imageManifest.Time.IsZero() {
-			log.Warn("Image manifest has zero time for file with tagnumber: " + fmt.Sprintf("%d", *tagnumber))
+			log.Warn("Image manifest has zero time for file with tagnumber: " + fmt.Sprintf("%d", tagnumber))
 			continue
 		}
 		manifestTime := imageManifest.Time.UTC()
@@ -419,7 +421,7 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 
 	// If all manifests were filtered out
 	if len(filteredImageManifests) == 0 {
-		log.Warn("No valid image manifests to return in GetClientImagesManifest for client: " + fmt.Sprintf("%d", *tagnumber))
+		log.Warn("No valid image manifests to return in GetClientImagesManifest for client: " + fmt.Sprintf("%d", tagnumber))
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
@@ -447,12 +449,12 @@ func GetImage(w http.ResponseWriter, req *http.Request) {
 	// local filepath example: inventory-images/{tag}/{date --iso}-{uuid}.{file extension}
 	// incoming request url: /api/client/files/{tag}/{uuid}.{file extension}
 	fileUUID := middleware.GetStrQuery(req.URL.Query(), "file_uuid")
-	if fileUUID == nil || strings.TrimSpace(*fileUUID) == "" {
+	if fileUUID == "" {
 		log.Warn("No image UUID provided in request to GetImage")
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	imageUUID := strings.TrimSpace(strings.ToLower(*fileUUID))
+	imageUUID := strings.ToLower(fileUUID)
 	for ext := range fileConstraints.ImageConstraints.AcceptedImageExtensionsAndMimeTypes {
 		if filepath.Ext(imageUUID) == ext {
 			imageUUID = strings.TrimSuffix(imageUUID, ext)
@@ -1010,10 +1012,8 @@ func FetchFormattedJobName(w http.ResponseWriter, req *http.Request) {
 func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "DownloadLiveImage"))
 	tag := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
-	if tag == nil || *tag == 0 {
-		log.Info("Missing tagnumber in request")
-	}
-	imageBytes, err := config.GetLiveImage(*tag)
+
+	imageBytes, err := config.GetLiveImage(tag)
 	if err != nil {
 		log.Warn("Error getting live image: " + err.Error())
 		if errors.Is(err, types.LiveImageMissingError) {
@@ -1036,7 +1036,7 @@ func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
 	reader := bytes.NewReader(imageBytes)
 	var readSeeker io.ReadSeeker = reader
 	w.Header().Set("Content-Type", "image/png")
-	http.ServeContent(w, req, strconv.Itoa(int(*tag))+".png", time.Now().UTC(), readSeeker)
+	http.ServeContent(w, req, strconv.Itoa(int(tag))+".png", time.Now().UTC(), readSeeker)
 	// log.Info("Served live image '" + strconv.Itoa(int(*tag)) + "' (" + fmt.Sprintf("%.2f", float64(len(imageBytes))/1024/1024) + " MB)")
 }
 
@@ -1118,12 +1118,13 @@ func InitClient(w http.ResponseWriter, req *http.Request) {
 func FetchCheckoutData(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchCheckoutData"))
-	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
-	if err != nil {
+	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
+
 	checkoutData, err := database.SelectCheckoutData(ctx, tagnumber)
 	if err != nil {
 		log.Warn("Error fetching checkout data: " + err.Error())
@@ -1171,14 +1172,14 @@ func GetDiskImageNameByModel(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetDiskImageNameByModel"))
 	model := middleware.GetStrQuery(req.URL.Query(), "system_model")
 
-	if model == nil || strings.TrimSpace(*model) == "" {
+	if model == "" {
 		log.Warn("No system model provided in request to GetDiskImageNameByModel")
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	diskImageRequest := new(types.DiskImageNameRequest)
-	diskImageRequest.SystemModel = model
+	diskImageRequest.SystemModel = &model
 
 	diskImageResponse, err := database.SelectDiskImageByModel(req.Context(), diskImageRequest)
 	if err != nil {
@@ -1188,19 +1189,19 @@ func GetDiskImageNameByModel(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if diskImageResponse == nil {
-		log.Warn("No disk image name found for model: " + *model)
+		log.Warn("No disk image name found for model: " + model)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if diskImageResponse.SystemModel == nil || strings.TrimSpace(*diskImageResponse.SystemModel) == "" {
-		log.Warn("Disk image system model is nil or empty for model: " + *model)
+		log.Warn("Disk image system model is nil or empty for model: " + model)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if diskImageResponse.ImageName == nil || strings.TrimSpace(*diskImageResponse.ImageName) == "" {
-		log.Warn("Disk image name is nil or empty for model: " + *model)
+		log.Warn("Disk image name is nil or empty for model: " + model)
 		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}

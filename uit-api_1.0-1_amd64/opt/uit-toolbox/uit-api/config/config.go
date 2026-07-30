@@ -798,7 +798,7 @@ func GetLiveImage(tag int64) ([]byte, error) {
 	if err != nil || as == nil {
 		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
 	}
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, types.CreateInvalidFieldError("tagnumber", err)
 	}
 
@@ -837,7 +837,7 @@ func GetLiveImage(tag int64) ([]byte, error) {
 }
 
 func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 	if len(imageBytes) <= 0 || len(imageBytes) > types.MaxLiveImageBytes {
@@ -863,7 +863,7 @@ func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {
 
 // Retrieves the clientUUID field from the ClientRealtimeData map for the given tag
 func GetRealtimeClientUUID(tag int64) (uuid.UUID, error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return uuid.Nil, types.CreateInvalidFieldError("tagnumber", err)
 	}
 
@@ -883,7 +883,7 @@ func GetRealtimeClientUUID(tag int64) (uuid.UUID, error) {
 
 // Updates the clientUUID field in the ClientRealtimeData map for the given tag
 func SetRealtimeClientUUID(tag int64, uuid uuid.UUID) error {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 
@@ -902,7 +902,7 @@ func SetRealtimeClientUUID(tag int64, uuid uuid.UUID) error {
 }
 
 func UpdateClientLastHeard(tag int64, lastHeard *time.Time) error {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 	if lastHeard == nil || lastHeard.IsZero() {
@@ -954,7 +954,7 @@ func GetAllOnlineClients() (onlineClientTags []int64, err error) {
 }
 
 func GetRealtimeClientData(tag int64) (*types.JobQueueRealtimeData, error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, types.CreateInvalidFieldError("tagnumber", err)
 	}
 
@@ -1007,7 +1007,7 @@ func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtime
 }
 
 func UpdateClientAppUptime(tag int64, duration time.Duration) error {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 
@@ -1032,7 +1032,7 @@ func UpdateClientAppUptime(tag int64, duration time.Duration) error {
 }
 
 func UpdateClientSystemUptime(tag int64, duration time.Duration) error {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 

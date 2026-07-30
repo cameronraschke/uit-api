@@ -403,7 +403,7 @@ func SetClientNetworkUsage(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := types.IsTagnumberInt64Valid(&networkData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(networkData.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
@@ -459,7 +459,7 @@ func SetClientUptime(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := types.IsTagnumberInt64Valid(&uptimeData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(uptimeData.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err))
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
@@ -521,7 +521,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Check if tagnumber is valid
-	if err := types.IsTagnumberInt64Valid(&lastHeardData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(lastHeardData.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err))
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
@@ -603,6 +603,7 @@ func UpdateClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
+
 	if err := types.IsTagnumberInt64Valid(batteryData.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err))
 		middleware.WriteJsonError(w, http.StatusBadRequest)
@@ -889,9 +890,9 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	clientLookupResult, err := database.ClientIDLookup(ctx, tag, nil)
+	clientLookupResult, err := database.ClientIDLookup(ctx, tag, "")
 	if err != nil {
-		log.Warn("Error looking up client ID for tag '" + strconv.FormatInt(*tag, 10) + "': " + err.Error())
+		log.Warn("Error looking up client ID for tag '" + strconv.FormatInt(tag, 10) + "': " + err.Error())
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -939,7 +940,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 
 	dbManifest, err := database.GetClientImageManifestByTag(ctx, tag)
 	if err != nil {
-		log.Error("Failed to get file hashes from tag '" + strconv.FormatInt(*tag, 10) + "': " + err.Error())
+		log.Error("Failed to get file hashes from tag '" + strconv.FormatInt(tag, 10) + "': " + err.Error())
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -980,7 +981,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		createNecessaryDirs := func(clientUUID *string) (string, error) {
 			// Check client UUID
 			if clientUUID == nil || strings.TrimSpace(*clientUUID) == "" {
-				return "", fmt.Errorf("client UUID is nil for tagnumber: %d", *tag)
+				return "", fmt.Errorf("client UUID is nil for tagnumber: %d", tag)
 			}
 			// Create directories if not existing
 			imageDirectoryPath := filepath.Join("/opt/inventory_images", *clientUUID)
@@ -1078,7 +1079,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		if len(uploadRequestHashes) > 1 {
 			for i := 0; i < len(uploadRequestHashes)-1; i++ {
 				if bytes.Equal(uploadRequestHashes[i], fileHashBytes) {
-					log.Warn("Duplicate file upload detected within same request for tag '" + strconv.FormatInt(*tag, 10) + "': file '" + fileHeader.Filename + "' has same hash as another uploaded file, skipping")
+					log.Warn("Duplicate file upload detected within same request for tag '" + strconv.FormatInt(tag, 10) + "': file '" + fileHeader.Filename + "' has same hash as another uploaded file, skipping")
 					result.Status = "skipped"
 					result.Reason = "duplicate_hash_in_request"
 					results = append(results, result)
@@ -1092,7 +1093,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 			if m.SHA256Hash != nil && bytes.Equal(*m.SHA256Hash, manifest.SHA256Hash) {
 				// Duplicate files don't matter if original copy is marked as hidden because original hidden file should be deleted from filesystem
 				if !manifest.Hidden {
-					log.Warn("Duplicate file upload detected for tag '" + strconv.FormatInt(*tag, 10) + "': file '" + fileHeader.Filename + "' (" + fmt.Sprintf("%x", fileHashBytes) + ") has same hash as existing file, skipping")
+					log.Warn("Duplicate file upload detected for tag '" + strconv.FormatInt(tag, 10) + "': file '" + fileHeader.Filename + "' (" + fmt.Sprintf("%x", fileHashBytes) + ") has same hash as existing file, skipping")
 					result.Status = "skipped"
 					result.Reason = "duplicate_hash"
 					results = append(results, result)
@@ -1102,7 +1103,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 			}
 			if m.FileName != nil {
 				if m.FileName == &manifest.FileName {
-					log.Warn("Duplicate file name detected for tag '" + strconv.FormatInt(*tag, 10) + "': file '" + fileHeader.Filename + "' has same generated file name as existing file, skipping")
+					log.Warn("Duplicate file name detected for tag '" + strconv.FormatInt(tag, 10) + "': file '" + fileHeader.Filename + "' has same generated file name as existing file, skipping")
 					result.Status = "skipped"
 					result.Reason = "duplicate_filename"
 					results = append(results, result)
@@ -1290,7 +1291,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Insert image metadata into database
-		manifest.Tagnumber = *tag
+		manifest.Tagnumber = tag
 		manifest.Hidden = false
 		manifest.Pinned = false
 
@@ -1350,7 +1351,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 	totalActualFileBytes := totalImageUploadSize + totalVideoUploadSize
 	summary := uploadSummary{
 		Status:             "success",
-		Tagnumber:          *tag,
+		Tagnumber:          tag,
 		TotalReceived:      len(files),
 		UploadedCount:      fileUploadCount,
 		SkippedCount:       skippedCount,
@@ -1410,7 +1411,7 @@ func TogglePinImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := database.TogglePinImage(ctx, &tagnumber, &fileUUID); err != nil {
+	if err := database.TogglePinImage(ctx, tagnumber, &fileUUID); err != nil {
 		log.Error("Failed to toggle pin image: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -1503,7 +1504,7 @@ func SetClientJob(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err = database.SetClientJob(req.Context(), *clientJson.Tagnumber, *clientJson.JobName); err != nil {
+	if err = database.SetClientJob(req.Context(), clientJson.Tagnumber, *clientJson.JobName); err != nil {
 		log.Error("Failed to set client job: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -1530,7 +1531,7 @@ func UpdateClientHealthCheck(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := types.IsTagnumberInt64Valid(&hardwareCheckData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(hardwareCheckData.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
@@ -1568,12 +1569,10 @@ func SetClientHardwareData(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if hardwareData.Tagnumber != nil && *hardwareData.Tagnumber != 0 {
-		if err := types.IsTagnumberInt64Valid(hardwareData.Tagnumber); err != nil {
-			log.Warn("Invalid tagnumber: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
-			return
-		}
+	if err := types.IsTagnumberInt64Valid(hardwareData.Tagnumber); err != nil {
+		log.Warn("Invalid tagnumber: " + err.Error())
+		middleware.WriteJsonError(w, http.StatusBadRequest)
+		return
 	}
 	if hardwareData.SystemSerial == nil || strings.TrimSpace(*hardwareData.SystemSerial) == "" {
 		log.Warn("System serial number is missing or empty in SetClientHardwareData")
@@ -1656,8 +1655,8 @@ func SetJobQueuedAt(w http.ResponseWriter, req *http.Request) {
 func UploadLiveImage(w http.ResponseWriter, req *http.Request) {
 	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "UploadLiveImage"))
 	tag := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
-	if tag == nil || *tag == 0 {
-		log.Info("Missing tagnumber in request")
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
+		log.Warn("Invalid tagnumber: " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -1678,8 +1677,8 @@ func UploadLiveImage(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := config.UpdateLiveImageBytes(*tag, body); err != nil {
-		log.Warn("Error updating live image for " + strconv.Itoa(int(*tag)) + ": " + err.Error())
+	if err := config.UpdateLiveImageBytes(tag, body); err != nil {
+		log.Warn("Error updating live image for " + strconv.Itoa(int(tag)) + ": " + err.Error())
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -1731,11 +1730,11 @@ func BulkUpdateInventoryLocation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	for _, tagnumber := range bulkUpdateReq.Tagnumbers {
-		if err := types.IsTagnumberInt64Valid(&tagnumber); err != nil {
+		if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 			log.Warn("Invalid tagnumber in bulk update request: " + strconv.FormatInt(tagnumber, 10))
 			continue
 		}
-		if err := updateRepo.BulkUpdateClientLocation(ctx, &transactionUUIDStr, &tagnumber, bulkUpdateReq.Location); err != nil {
+		if err := updateRepo.BulkUpdateClientLocation(ctx, &transactionUUIDStr, tagnumber, bulkUpdateReq.Location); err != nil {
 			log.Error("Failed to bulk update inventory location: " + err.Error())
 			middleware.WriteJsonError(w, http.StatusInternalServerError)
 			return

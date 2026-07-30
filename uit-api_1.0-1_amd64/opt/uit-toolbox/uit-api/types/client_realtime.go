@@ -27,7 +27,7 @@ type JobQueueRealtimeData struct {
 
 type JobQueueTableRowView struct {
 	ClientUUID             *uuid.UUID    `json:"client_uuid"`
-	Tagnumber              *int64        `json:"tagnumber"`
+	Tagnumber              int64         `json:"tagnumber"`
 	SystemSerial           *string       `json:"system_serial"`
 	SystemManufacturer     *string       `json:"system_manufacturer"`
 	SystemModel            *string       `json:"system_model"`

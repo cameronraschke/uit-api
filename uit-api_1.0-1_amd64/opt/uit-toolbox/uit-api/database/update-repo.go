@@ -26,8 +26,8 @@ type Update interface {
 	UpdateClientAppUptime(ctx context.Context, tag int64, appUptime int64) (err error)
 	UpdateClientSystemUptime(ctx context.Context, tag int64, systemUptime int64) (err error)
 	UpdateJobQueuedAt(ctx context.Context, jobQueue *types.JobQueueTableRowView) (err error)
-	UpdateClientBatteryChargePcnt(ctx context.Context, tag *int64, percent *float64) (err error)
-	BulkUpdateClientLocation(ctx context.Context, transactionUUID *string, tag *int64, location *string) (err error)
+	UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent *float64) (err error)
+	BulkUpdateClientLocation(ctx context.Context, transactionUUID *string, tag int64, location *string) (err error)
 }
 
 type UpdateRepo struct {
@@ -247,7 +247,7 @@ func InsertClientCheckoutsUpdate(ctx context.Context, transactionUUID uuid.UUID,
 	if checkoutData == nil {
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "InventoryCheckoutWriteModel is nil")
 	}
-	if err := types.IsTagnumberInt64Valid(&checkoutData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(checkoutData.Tagnumber); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 	// if checkoutData.CheckoutDate == nil &&
@@ -325,7 +325,7 @@ func UpdateInventoryHardwareData(ctx context.Context, transactionUUID uuid.UUID,
 	if hardwareData == nil {
 		return fmt.Errorf("%w: %s (%s)", types.InvalidStructureError, "InventoryHardwareWriteModel", "nil")
 	}
-	if err := types.IsTagnumberInt64Valid(&hardwareData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(hardwareData.Tagnumber); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 
@@ -398,7 +398,7 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		return fmt.Errorf("%w: %s (%s)", types.InvalidStructureError, "InventoryLocationWriteModel", "nil")
 	}
 
-	if err := types.IsTagnumberInt64Valid(&inventoryUpdate.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(inventoryUpdate.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
@@ -623,7 +623,7 @@ func UpdateClientImages(ctx context.Context, transactionUUID uuid.UUID, manifest
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "transaction UUID")
 	}
 
-	if err := types.IsTagnumberInt64Valid(&manifest.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(manifest.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
@@ -760,7 +760,7 @@ func HideClientImageByUUID(ctx context.Context, fileUUID string) (err error) {
 	return nil
 }
 
-func TogglePinImage(ctx context.Context, tagnumber *int64, fileUUID *string) (err error) {
+func TogglePinImage(ctx context.Context, tagnumber int64, fileUUID *string) (err error) {
 	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
@@ -797,7 +797,7 @@ func TogglePinImage(ctx context.Context, tagnumber *int64, fileUUID *string) (er
 	;`
 	sqlResult, err := tx.ExecContext(ctx, sqlQuery,
 		ptrToNullString(fileUUID),
-		ptrToNullInt64(tagnumber),
+		toNullInt64(tagnumber),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -854,7 +854,7 @@ func SetAllOnlineClientJobs(ctx context.Context, clientJob string) (err error) {
 }
 
 func SetClientJob(ctx context.Context, tag int64, clientJob string) (err error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
@@ -904,7 +904,7 @@ func SetClientJob(ctx context.Context, tag int64, clientJob string) (err error) 
 }
 
 func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpdateDTO) (err error) {
-	if err := types.IsTagnumberInt64Valid(&memInfo.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(memInfo.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if memInfo.TotalUsageKB <= 0 {
@@ -966,7 +966,7 @@ func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpda
 }
 
 func UpsertClientMemoryCapacityKB(ctx context.Context, memInfo types.MemoryDataUpdateDTO) (err error) {
-	if err := types.IsTagnumberInt64Valid(&memInfo.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(memInfo.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if memInfo.TotalCapacityKB <= 0 {
@@ -1036,7 +1036,7 @@ func UpsertClientCPUUsage(ctx context.Context, cpuData *types.CPUDataUpdateDTO) 
 		return fmt.Errorf("CPU data is required")
 	}
 
-	if err := types.IsTagnumberInt64Valid(&cpuData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(cpuData.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
@@ -1102,7 +1102,7 @@ func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (e
 		return fmt.Errorf("CPU data is required")
 	}
 
-	if err := types.IsTagnumberInt64Valid(&cpuData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(cpuData.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
@@ -1165,7 +1165,7 @@ func (updateRepo *UpdateRepo) UpdateClientNetworkUsage(ctx context.Context, netw
 	if networkData == nil {
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "NetworkData is nil")
 	}
-	if err := types.IsTagnumberInt64Valid(&networkData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(networkData.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if networkData.NetworkUsage == nil {
@@ -1227,7 +1227,7 @@ func UpsertClientCPUTemperature(ctx context.Context, cpuTempData *types.CPUDataU
 	if cpuTempData == nil {
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "CPUData is nil")
 	}
-	if err := types.IsTagnumberInt64Valid(&cpuTempData.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(cpuTempData.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if cpuTempData.MillidegreesC <= 0 {
@@ -1391,7 +1391,7 @@ func UpsertClientHealthCheck(ctx context.Context, healthCheck *types.ClientHealt
 	if healthCheck == nil {
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "healthCheck is nil")
 	}
-	if err := types.IsTagnumberInt64Valid(&healthCheck.Tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(healthCheck.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if healthCheck.TransactionUUID == "" {
@@ -1894,7 +1894,7 @@ func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *t
 
 	var res sql.Result
 	res, err = tx.ExecContext(ctx, sqlCode,
-		ptrToNullInt64(jobQueue.Tagnumber),
+		toNullInt64(jobQueue.Tagnumber),
 		ptrToNullTime(jobQueue.JobQueuedAt),
 	)
 	if err != nil {
@@ -1908,7 +1908,7 @@ func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *t
 }
 
 func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time) (err error) {
-	if err := types.IsTagnumberInt64Valid(&tag); err != nil {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if lastHeard == nil || lastHeard.IsZero() {
@@ -1953,7 +1953,7 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 	return nil
 }
 
-func (updateRepo *UpdateRepo) UpdateClientBatteryChargePcnt(ctx context.Context, tag *int64, percent *float64) (err error) {
+func (updateRepo *UpdateRepo) UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent *float64) (err error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return err
 	}
@@ -1981,7 +1981,7 @@ func (updateRepo *UpdateRepo) UpdateClientBatteryChargePcnt(ctx context.Context,
 	;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		ptrToNullInt64(tag),
+		toNullInt64(tag),
 		ptrToNullFloat64(percent),
 	)
 	if err != nil {
@@ -1993,7 +1993,7 @@ func (updateRepo *UpdateRepo) UpdateClientBatteryChargePcnt(ctx context.Context,
 	return nil
 }
 
-func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, transactionUUID *string, tag *int64, location *string) (err error) {
+func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, transactionUUID *string, tag int64, location *string) (err error) {
 	if transactionUUID == nil || strings.TrimSpace(*transactionUUID) == "" {
 		return fmt.Errorf("transactionUUID is required")
 	}
@@ -2062,12 +2062,12 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 	;`
 	var locationsLogSqlResult sql.Result
 	locationsLogSqlResult, err = tx.ExecContext(ctx, locationsLogSql,
-		ptrToNullInt64(tag),
+		toNullInt64(tag),
 		ptrToNullString(location),
 		ptrToNullString(transactionUUID),
 	)
 	if err != nil {
-		return fmt.Errorf("error while bulk updating a client's ('%d') location: %w", *tag, err)
+		return fmt.Errorf("error while bulk updating a client's ('%d') location: %w", tag, err)
 	}
 	if err := VerifyRowsAffected(locationsLogSqlResult, 1); err != nil {
 		return fmt.Errorf("error while checking rows affected on a locations bulk update: %w", err)
@@ -2138,12 +2138,12 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 	;`
 	var locationsSQLResult sql.Result
 	locationsSQLResult, err = tx.ExecContext(ctx, locationsSQL,
-		ptrToNullInt64(tag),
+		toNullInt64(tag),
 		ptrToNullString(location),
 		ptrToNullString(transactionUUID),
 	)
 	if err != nil {
-		return fmt.Errorf("error while bulk updating a client's ('%d') location: %w", *tag, err)
+		return fmt.Errorf("error while bulk updating a client's ('%d') location: %w", tag, err)
 	}
 	if err := VerifyRowsAffected(locationsSQLResult, 1); err != nil {
 		return fmt.Errorf("error while checking rows affected on a locations bulk update: %w", err)
@@ -2161,7 +2161,10 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	if windowsUpdateDTO.RequestMetadata == nil {
 		return fmt.Errorf("%w: %s", types.InvalidFieldError, "RequestMetadata")
 	}
-	if err := types.IsTagnumberInt64Valid(windowsUpdateDTO.RequestMetadata.Tagnumber); err != nil {
+	if windowsUpdateDTO.RequestMetadata.Tagnumber == nil {
+		return fmt.Errorf("%w: %s", types.MissingFieldError, "tagnumber")
+	}
+	if err := types.IsTagnumberInt64Valid(*windowsUpdateDTO.RequestMetadata.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 	if windowsUpdateDTO.RequestMetadata.SystemSerial == nil || strings.TrimSpace(*windowsUpdateDTO.RequestMetadata.SystemSerial) == "" {
@@ -2774,7 +2777,7 @@ func UpsertJobStats(ctx context.Context, JobStatsDTO *types.JobStatsDTO) (err er
 }
 
 func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string) (err error) {
-	if err := types.IsTagnumberInt64Valid(&tagnumber); err != nil {
+	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 

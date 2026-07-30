@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,7 +9,7 @@ import (
 
 type ClientHardwareView struct {
 	TransactionUUID           string     `json:"transaction_uuid"`
-	Tagnumber                 *int64     `json:"tagnumber"`
+	Tagnumber                 int64      `json:"tagnumber"`
 	SystemSerial              *string    `json:"system_serial"`
 	SystemUUID                *string    `json:"system_uuid"`
 	SystemManufacturer        *string    `json:"system_manufacturer"`
@@ -66,7 +65,7 @@ type ClientHealthCheck struct {
 }
 
 type MemoryDataUpdateRequest struct {
-	Tagnumber       *int64  `json:"tagnumber"`
+	Tagnumber       int64   `json:"tagnumber"`
 	TotalUsageKB    *int64  `json:"memory_usage_kb"`
 	TotalCapacityKB *int64  `json:"memory_capacity_kb"`
 	Type            *string `json:"type"`
@@ -105,7 +104,7 @@ func (m *MemoryDataUpdateRequest) ToDTO() (*MemoryDataUpdateDTO, error) {
 		speedMHz = *m.SpeedMHz
 	}
 	return &MemoryDataUpdateDTO{
-		Tagnumber:       *m.Tagnumber,
+		Tagnumber:       m.Tagnumber,
 		TotalUsageKB:    usageKB,
 		TotalCapacityKB: capacityKB,
 		Type:            memType,
@@ -114,7 +113,7 @@ func (m *MemoryDataUpdateRequest) ToDTO() (*MemoryDataUpdateDTO, error) {
 }
 
 type CPUDataUpdateRequest struct {
-	Tagnumber     *int64   `json:"tagnumber"`
+	Tagnumber     int64    `json:"tagnumber"`
 	UsagePercent  *float64 `json:"cpu_current_usage"`
 	MHz           *float64 `json:"cpu_current_mhz"`
 	MillidegreesC *float64 `json:"cpu_millidegrees_c"`
@@ -156,7 +155,7 @@ func (c *CPUDataUpdateRequest) ToDTO() (*CPUDataUpdateDTO, error) {
 		millidegreesC = *c.MillidegreesC
 	}
 	return &CPUDataUpdateDTO{
-		Tagnumber:     *c.Tagnumber,
+		Tagnumber:     c.Tagnumber,
 		UsagePercent:  usagePercent,
 		MHz:           mhz,
 		MillidegreesC: millidegreesC,
@@ -173,8 +172,8 @@ type BatteryDataRequest struct {
 	TransactionUUID           *string    `json:"transaction_uuid"`
 	UpdatedFromWindows        *bool      `json:"updated_from_windows"`
 	TimeStamp                 *time.Time `json:"timestamp"`
-	Tagnumber                 *int64     `json:"tagnumber"`
-	SystemSerial              *string    `json:"system_serial"`
+	Tagnumber                 int64      `json:"tagnumber"`
+	SystemSerial              string     `json:"system_serial"`
 	BatteryChargeCycles       *int64     `json:"battery_charge_cycles"`
 	BatteryChargePcnt         *float64   `json:"battery_charge_pcnt"`
 	BatteryCurrentMaxCapacity *float64   `json:"battery_current_max_capacity"`
@@ -243,7 +242,7 @@ func (b *BatteryDataRequest) ToDTO() (dto *BatteryDataDTO, err error) {
 	}
 
 	// systemSerial is optional, but if provided, it must not be empty
-	if b.SystemSerial != nil && len(strings.TrimSpace(*b.SystemSerial)) > 0 {
+	if b.SystemSerial != "" {
 		if err := IsSystemSerialValid(b.SystemSerial); err != nil {
 			return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "system_serial", err)
 		}
@@ -253,8 +252,8 @@ func (b *BatteryDataRequest) ToDTO() (dto *BatteryDataDTO, err error) {
 		TransactionUUID:           transactionUUID,
 		UpdatedFromWindows:        updatedFromWindows,
 		TimeStamp:                 timestamp,
-		Tagnumber:                 *b.Tagnumber,
-		SystemSerial:              *b.SystemSerial,
+		Tagnumber:                 b.Tagnumber,
+		SystemSerial:              b.SystemSerial,
 		BatteryChargeCycles:       b.BatteryChargeCycles,
 		BatteryChargePcnt:         b.BatteryChargePcnt,
 		BatteryCurrentMaxCapacity: b.BatteryCurrentMaxCapacity,
