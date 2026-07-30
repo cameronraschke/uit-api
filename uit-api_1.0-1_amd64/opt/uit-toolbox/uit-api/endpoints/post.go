@@ -540,14 +540,14 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 
 	clientUUID, err := config.GetRealtimeClientUUID(lastHeardData.Tagnumber)
 	if err != nil {
-		log.Info(fmt.Sprintf("%v '%d': %v", types.ErrClientUUIDMissingError, lastHeardData.Tagnumber, err))
-		if !errors.Is(err, types.ErrClientNotFound) {
+		log.Info(fmt.Sprintf("error retrieving realtime data for tag '%d': %v", lastHeardData.Tagnumber, err))
+		if !errors.Is(err, types.ErrClientNotFound) && !errors.Is(err, types.ErrClientUUIDMissingError) {
 			middleware.WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
 
-	if clientUUID == uuid.Nil {
+	if clientUUID == uuid.Nil || clientUUID.String() == "" {
 		pgxPool, err := config.GetPGXPool()
 		if err != nil {
 			log.Error("No database connection available for updating client last heard")
