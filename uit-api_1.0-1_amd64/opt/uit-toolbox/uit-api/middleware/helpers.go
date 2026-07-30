@@ -292,7 +292,7 @@ func GetStrQuery(queries url.Values, key string) string {
 	if val == "" {
 		return ""
 	}
-	return ""
+	return val
 }
 func GetUUIDFromQuery(queries url.Values, key string) (*uuid.UUID, error) {
 	strVal := GetStrQuery(queries, key)

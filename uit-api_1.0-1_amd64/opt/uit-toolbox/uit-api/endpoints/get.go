@@ -68,7 +68,7 @@ func GetClientIDs(w http.ResponseWriter, req *http.Request) {
 	serialErr := types.IsSystemSerialValid(systemSerial)
 
 	if tagErr != nil && serialErr != nil {
-		log.Warn("No tagnumber or system_serial provided")
+		log.Warn(fmt.Sprintf("Both tag (%d) and serial (%s) are invalid or missing", tagnumber, systemSerial))
 		middleware.WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
