@@ -191,7 +191,7 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if endpointConfig.EndpointType != "web_content" {
+	if endpointConfig.EndpointType != "text_content" {
 		log.Warn(fmt.Sprintf("endpoint of type '%s' is not allowed to be served by WebServerHandler", endpointConfig.EndpointType))
 		middleware.WriteJsonError(w, http.StatusForbidden)
 		return

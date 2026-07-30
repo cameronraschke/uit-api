@@ -648,7 +648,7 @@ func SetHeadersMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if endpointConfig.EndpointType == "web_content" {
+		if endpointConfig.EndpointType == "text_content" {
 			var nonce string
 			switch endpointConfig.ContentType {
 			case "text/html; charset=utf-8":
