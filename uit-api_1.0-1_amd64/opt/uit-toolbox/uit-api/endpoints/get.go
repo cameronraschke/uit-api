@@ -1024,8 +1024,8 @@ func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if len(imageBytes) == 0 {
-		log.Warn("Requested live image is empty")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		// log.Warn("Requested live image is empty")
+		middleware.WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	if len(imageBytes) == 0 {

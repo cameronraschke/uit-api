@@ -604,6 +604,13 @@ func SetHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetHeadersMiddleware"))
 
+		endpointConfig, err := config.GetWebEndpointConfig(req.URL.Path)
+		if err != nil {
+			log.Warn("Cannot retrieve endpoint config from context: " + err.Error())
+			WriteJsonError(w, http.StatusInternalServerError)
+			return
+		}
+
 		// SERVER-SIDE CORS CHECKS
 		// Get web server IP for CORS
 		// _, httpsServerIP, err := config.GetWebServerIPs()
@@ -612,77 +619,64 @@ func SetHeadersMiddleware(next http.Handler) http.Handler {
 		// 	WriteJsonError(w, http.StatusInternalServerError)
 		// 	return
 		// }
+
 		// Check CORS policy
-		cors := http.NewCrossOriginProtection()
-		// cors.AddTrustedOrigin("https://" + httpsServerIP + ":1411")
-		if err := cors.Check(req); err != nil {
-			log.Warn("Request blocked because it violates CORS policy: " + err.Error())
+		if err := config.CheckCORSPolicy(req); err != nil {
+			log.Warn(fmt.Sprintf("Request blocked because it violates CORS policy: %v", err))
 			WriteJsonError(w, http.StatusForbidden)
 			return
+		}
+
+		// Set on every request
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		// Hide server information
+		w.Header().Set("Server", "")
+		if req.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload") // 2 years
 		}
 
 		// OPTIONS preflight request handling
 		if req.Method == http.MethodOptions {
 			// w.Header().Set("Access-Control-Allow-Origin", "https://"+httpsServerIP+":1411")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Max-Age", "86400") // Cache preflight for 24 hours
+			// w.Header().Set("Access-Control-Allow-Credentials", "true")
+			// w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			// w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			// w.Header().Set("Access-Control-Max-Age", "86400") // Cache preflight for 24 hours
 			w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		// CORS policy
-		// w.Header().Set("Access-Control-Allow-Origin", "https://"+httpsServerIP+":1411")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Vary", "Origin")
+		if endpointConfig.EndpointType == "web_content" {
+			var nonce string
+			switch endpointConfig.ContentType {
+			case "text/html; charset=utf-8":
+				nonce = addHTMLHeaders(w)
+				if nonce != "" {
+					newCtx, err := withNonce(req.Context(), nonce)
+					if err != nil {
+						log.Error("Error storing CSP nonce in context: " + err.Error())
+						WriteJsonError(w, http.StatusInternalServerError)
+						return
+					}
+					req = req.WithContext(newCtx)
+				}
+			case "text/javascript; charset=utf-8":
+				addJSHeaders(w)
+			case "text/css; charset=utf-8":
+				addCSSHeaders(w)
+			default:
+				log.Warn(fmt.Sprintf("invalid content_type in endpoint config: '%s'", endpointConfig.ContentType))
+			}
 
-		// Security headers
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload") // 2 years
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		nonce, err := generateNonce(24)
-		if err != nil {
-			log.Error("Cannot generate CSP nonce: " + err.Error())
-			WriteJsonError(w, http.StatusInternalServerError)
-			return
+			// Cache headers
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+
+			// Browser permissions
+			w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()")
+
 		}
-		newCtx, err := withNonce(req.Context(), nonce)
-		if err != nil {
-			log.Error("Error storing CSP nonce in context: " + err.Error())
-			WriteJsonError(w, http.StatusInternalServerError)
-			return
-		}
-		req = req.WithContext(newCtx)
-		cspPolicy := "default-src 'self'; " +
-			"style-src 'self'; " +
-			"script-src 'self' 'nonce-" + nonce + "'; " +
-			"worker-src 'self'; " +
-			"img-src 'self' blob: data:; " +
-			"font-src 'self'; " +
-			"connect-src 'self'; " +
-			"frame-ancestors 'none'; " +
-			"base-uri 'self'; " +
-			"form-action 'self'; " +
-			"upgrade-insecure-requests"
-		w.Header().Set("Content-Security-Policy", cspPolicy)
-		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
-		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
-
-		// Cache headers
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
-
-		// Browser permissions
-		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()")
-
-		// Hide server information
-		w.Header().Set("Server", "")
-
 		next.ServeHTTP(w, req)
 	})
 }

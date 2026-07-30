@@ -184,23 +184,21 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 		middleware.WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
+	endpointConfig, err := config.GetWebEndpointConfig(requestedPath)
+	if err != nil {
+		log.Warn("cannot get endpoint config for endpoint '" + requestedPath + "': " + err.Error() + "")
+		middleware.WriteJsonError(w, http.StatusNotFound)
+		return
+	}
 
-	nonce, nonceExists := middleware.GetNonceFromContext(ctx)
-	if !nonceExists || strings.TrimSpace(nonce) == "" {
-		log.Error("Error retrieving CSP nonce from context")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+	if endpointConfig.EndpointType != "web_content" {
+		log.Warn(fmt.Sprintf("endpoint of type '%s' is not allowed to be served by WebServerHandler", endpointConfig.EndpointType))
+		middleware.WriteJsonError(w, http.StatusForbidden)
 		return
 	}
 
 	// log.Debug("Web request from " + requestIP.String() + " for " + requestedPath)
 
-	// Get endpoint config
-	endpointConfig, err := config.GetWebEndpointConfig(requestedPath)
-	if err != nil {
-		log.Warn("cannot get endpoint config for endpoint '" + requestedPath + "': " + err.Error() + "")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
 	filePath, err := config.GetWebEndpointFilePath(endpointConfig)
 	if err != nil {
 		log.Warn("cannot get file path for endpoint '" + requestedPath + "': " + err.Error() + "")
@@ -265,6 +263,12 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 		if endpointConfig.Requires != nil {
 			// Generate nonce
 			if slices.Contains(endpointConfig.Requires, "nonce") {
+				nonce, nonceExists := middleware.GetNonceFromContext(ctx)
+				if !nonceExists || strings.TrimSpace(nonce) == "" {
+					log.Error("Error retrieving CSP nonce from context")
+					middleware.WriteJsonError(w, http.StatusInternalServerError)
+					return
+				}
 				httpTemplateResponseData.JsNonce = nonce
 			}
 

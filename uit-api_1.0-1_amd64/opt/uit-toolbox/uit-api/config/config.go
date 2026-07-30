@@ -817,20 +817,22 @@ func GetLiveImage(tag int64) ([]byte, error) {
 	liveImage := val.LiveImageBytes
 	if liveImage == nil {
 		as.ClientRealtimeDataMu.RUnlock()
-		return nil, fmt.Errorf("live image bytes are nil for tag %d", tag)
-
+		// return nil, fmt.Errorf("live image bytes are nil for tag %d", tag)
+		return nil, nil
 	}
 	if len(liveImage) == 0 || len(liveImage) > types.MaxLiveImageBytes {
 		as.ClientRealtimeDataMu.RUnlock()
 		return nil, fmt.Errorf("size of live image is out of range: %.2fMB", float64(len(liveImage))/1024/1024)
 	}
 
-	// Copy the bytes
-	imageCopy := make([]byte, len(liveImage))
-	copy(imageCopy, liveImage)
-	// Release the lock after copying the live image bytes in case live image is being updated concurrently
+	// // Copy the bytes
+	// imageCopy := make([]byte, len(liveImage))
+	// copy(imageCopy, liveImage)
+	// // Release the lock after copying the live image bytes in case live image is being updated concurrently
+	// as.ClientRealtimeDataMu.RUnlock()
+	// return imageCopy, nil
 	as.ClientRealtimeDataMu.RUnlock()
-	return imageCopy, nil
+	return liveImage, nil
 }
 
 func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {

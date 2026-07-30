@@ -65,9 +65,6 @@ var (
 	disallowedFileExtensions = []string{
 		".tmp", ".bak", ".swp",
 	}
-)
-
-var (
 	allowedQueryKeyRegex = regexp.MustCompile(`^[A-Za-z0-9._\-]+$`)
 )
 
@@ -157,6 +154,50 @@ func WritePlainTextResponse(w http.ResponseWriter, message string) {
 	}
 
 	_ = responseController.Flush()
+}
+
+func addHTMLHeaders(w http.ResponseWriter) (nonce string) {
+	w.Header().Set("X-Frame-Options", "DENY")
+	nonce = setCSPHeadersWithNonce(w)
+	addCORSHeaders(w)
+
+	return nonce
+}
+
+func addJSHeaders(w http.ResponseWriter) {}
+
+func addCSSHeaders(w http.ResponseWriter) {}
+
+func addCORSHeaders(w http.ResponseWriter) {
+	// CORS policy
+	// w.Header().Set("Access-Control-Allow-Origin", "https://"+httpsServerIP+":1411")
+	// w.Header().Set("Access-Control-Allow-Credentials", "true")
+	// w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	// w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
+	w.Header().Set("Vary", "Origin")
+
+	w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+}
+
+func setCSPHeadersNoNonce(w http.ResponseWriter) {
+	b := new(strings.Builder)
+	b.WriteString(config.CSPPolicy)
+	w.Header().Set("Content-Security-Policy", b.String())
+}
+
+func setCSPHeadersWithNonce(w http.ResponseWriter) (nonce string) {
+	nonce, _ = generateNonce(24)
+	b := new(strings.Builder)
+	b.WriteString(config.CSPPolicy)
+	b.WriteString("script-src 'self' 'nonce-")
+	b.WriteString(nonce)
+	b.WriteString("'; ")
+
+	w.Header().Set("Content-Security-Policy", b.String())
+	return nonce
 }
 
 func generateNonce(n int) (string, error) {

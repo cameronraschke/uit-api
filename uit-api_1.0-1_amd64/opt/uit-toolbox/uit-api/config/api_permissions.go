@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -46,9 +47,34 @@ const (
 	EndpointPermissionAdmin
 )
 
+const (
+	// CSPPolicy missing the nonce for script-src, as the nonce is generated per request and added in middleware
+	CSPPolicy = `default-src 'self';
+		style-src 'self';
+		worker-src 'self';
+		img-src 'self' blob: data:;
+		font-src 'self';
+		connect-src 'self';
+		object-src 'none';
+		frame-ancestors 'none';
+		base-uri 'self';
+		form-action 'self';
+		upgrade-insecure-requests;
+		`
+)
+
 var (
 	ErrInvalidEndpointPermission = errors.New("invalid endpoint permission")
+	corsPolicy                   = http.NewCrossOriginProtection()
 )
+
+func CheckCORSPolicy(req *http.Request) error {
+	// cors.AddTrustedOrigin("https://" + httpsServerIP + ":1411")
+	if err := corsPolicy.Check(req); err != nil {
+		return err
+	}
+	return nil
+}
 
 func InitPermissions() (*PermissionConfig, error) {
 	permissionsDirectory := "/etc/uit-toolbox/acls/"
