@@ -139,8 +139,8 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		if config.RequestIPBlocked(reqAddr) {
-			log.Debug("Request received from blocked IP")
+		if config.IsIPBlocked(reqAddr) {
+			// log.Debug("Request received from blocked IP")
 			WriteJsonError(w, http.StatusForbidden)
 			return
 		}
@@ -287,9 +287,9 @@ func RateLimitMiddleware(rateType string) func(http.Handler) http.Handler {
 			}
 
 			// IsClientRateLimited assigns a rate limiter to the client IP if not already present
-			limited, retryAfter := config.IsClientRateLimited(rateType, reqIP)
+			limited, retryAt := config.IsClientRateLimited(reqIP, rateType)
 			if limited {
-				log.Debug("Client is rate limited", slog.Duration("retry_after", retryAfter))
+				log.Debug("Client is rate limited", slog.Time("retry_at", retryAt))
 				WriteJsonError(w, http.StatusTooManyRequests)
 				return
 			}

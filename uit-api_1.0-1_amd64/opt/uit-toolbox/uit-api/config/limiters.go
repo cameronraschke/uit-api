@@ -3,9 +3,15 @@ package config
 import (
 	"errors"
 	"net/netip"
+	"sync"
 	"time"
+	"uit-api/types"
 
 	"golang.org/x/time/rate"
+)
+
+const (
+	limitersCleanupInterval = 3 * time.Minute
 )
 
 type RateLimiter struct {
@@ -15,46 +21,123 @@ type RateLimiter struct {
 }
 
 func GetGlobalLimiters(limiterType string) *RateLimiter {
-	appState, err := GetAppState()
-	if err != nil {
-		return nil
-	}
-
 	switch limiterType {
 	case "file":
-		return appState.fileLimiter.Load()
+		fileLimiterCopy := fileServerRateLimiter
+		return &fileLimiterCopy
 	case "web":
-		return appState.webServerLimiter.Load()
+		webLimiterCopy := webServerRateLimiter
+		return &webLimiterCopy
 	case "api":
-		return appState.apiLimiter.Load()
+		apiLimiterCopy := apiRateLimiter
+		return &apiLimiterCopy
 	case "auth":
-		return appState.authLimiter.Load()
+		authLimiterCopy := authRateLimiter
+		return &authLimiterCopy
 	default:
 		return nil
 	}
 }
 
-func (rl *RateLimiter) GetLimiter(ipAddr netip.Addr) *rate.Limiter {
-	defaultLimiter := rate.NewLimiter(rate.Limit(1), 5) // Default rate limit if not found
+func AttachLimiterToClient(ipAddr netip.Addr, limiterType string) error {
+	if ipAddr == (netip.Addr{}) || !ipAddr.IsValid() {
+		return errors.New("invalid IP address")
+	}
+
+	appState, err := GetAppState()
+	if err != nil {
+		return errors.New("app state is not initialized")
+	}
+
+	checkExistingRL := func(mu *sync.RWMutex, m map[netip.Addr]RateLimiter) bool {
+		mu.RLock()
+		defer mu.RUnlock()
+		if _, exists := m[ipAddr]; exists {
+			return true
+		}
+		return false
+	}
+
+	createNewRL := func(mu *sync.RWMutex, m map[netip.Addr]RateLimiter, l *RateLimiter) *RateLimiter {
+		newCrl := new(RateLimiter)
+		newCrl.LastSeen = time.Now()
+		newCrl.Limiter = l.Limiter
+		mu.Lock()
+		defer mu.Unlock()
+		m[ipAddr] = *newCrl
+		return newCrl
+	}
+
+	var limiter *RateLimiter
+	switch limiterType {
+	case "file":
+		if checkExistingRL(&appState.fileLimiterMu, appState.fileLimiterMap) {
+			return nil // Already exists, no need to create a new one
+		}
+		limiter = &fileServerRateLimiter
+		limiter = createNewRL(&appState.fileLimiterMu, appState.fileLimiterMap, limiter)
+	case "web":
+		if checkExistingRL(&appState.webServerLimiterMu, appState.webServerLimiterMap) {
+			return nil // Already exists, no need to create a new one
+		}
+		limiter = &webServerRateLimiter
+		limiter = createNewRL(&appState.webServerLimiterMu, appState.webServerLimiterMap, limiter)
+	case "api":
+		if checkExistingRL(&appState.apiLimiterMu, appState.apiLimiterMap) {
+			return nil // Already exists, no need to create a new one
+		}
+		limiter = &apiRateLimiter
+		limiter = createNewRL(&appState.apiLimiterMu, appState.apiLimiterMap, limiter)
+	case "auth":
+		if checkExistingRL(&appState.authLimiterMu, appState.authLimiterMap) {
+			return nil // Already exists, no need to create a new one
+		}
+		limiter = &authRateLimiter
+		limiter = createNewRL(&appState.authLimiterMu, appState.authLimiterMap, limiter)
+	default:
+		return errors.New("invalid limiter type")
+	}
+
+	return nil
+}
+
+func GetClientLimiter(ipAddr netip.Addr, limiterType string) *rate.Limiter {
+	defaultLimiter := rate.NewLimiter(apiRateLimiter.Limiter.Limit(), apiRateLimitBurst) // Default rate limit if not found
 	if ipAddr == (netip.Addr{}) || !ipAddr.IsValid() {
 		return defaultLimiter
 	}
 
-	rl.ClientMapMu.Lock()
-	defer rl.ClientMapMu.Unlock()
-	var crl ClientRateLimiter
-	var ipExists bool
-	if crl, ipExists = rl.ClientMap[ipAddr]; !ipExists {
+	as, err := GetAppState()
+	if err != nil {
 		return defaultLimiter
 	}
 
-	newCrl := new(ClientRateLimiter)
-	newCrl.LastSeen = time.Now()
-	newCrl.Limiter = crl.Limiter
+	var limiter RateLimiter
+	switch limiterType {
+	case "file":
+		as.fileLimiterMu.RLock()
+		limiter, _ = as.fileLimiterMap[ipAddr]
+		as.fileLimiterMu.RUnlock()
+	case "web":
+		as.webServerLimiterMu.RLock()
+		limiter, _ = as.webServerLimiterMap[ipAddr]
+		as.webServerLimiterMu.RUnlock()
+	case "api":
+		as.apiLimiterMu.RLock()
+		limiter, _ = as.apiLimiterMap[ipAddr]
+		as.apiLimiterMu.RUnlock()
+	case "auth":
+		as.authLimiterMu.RLock()
+		limiter, _ = as.authLimiterMap[ipAddr]
+		as.authLimiterMu.RUnlock()
+	default:
+		return defaultLimiter
+	}
 
-	rl.ClientMap[ipAddr] = *newCrl
-
-	return newCrl.Limiter
+	if limiter.Limiter == nil {
+		return defaultLimiter
+	}
+	return limiter.Limiter
 }
 
 func BlockIP(ip netip.Addr) {
@@ -65,30 +148,14 @@ func BlockIP(ip netip.Addr) {
 	appState.bannedClientsMu.Lock()
 	defer appState.bannedClientsMu.Unlock()
 	if _, exists := appState.bannedClients[ip]; !exists {
-		appState.bannedClients[ip] = banPeriod
+		appState.bannedClients[ip] = bannedUntil()
 	}
 }
 
-func IsIPBlocked(ip netip.Addr) bool {
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return false
-	}
-
-	appState.bannedClientsMu.RLock()
-	defer appState.bannedClientsMu.RUnlock()
-	for blockedIP, _ := range appState.bannedClients {
-		if blockedIP == ip {
-			return true
-		}
-	}
-	return false
-}
-
-func IsClientRateLimited(limiterType string, ipAddr netip.Addr) (limited bool, retryAfter time.Duration) {
+func IsClientRateLimited(ipAddr netip.Addr, limiterType string) (limited bool, bannedUntil time.Time) {
 	appState, err := GetAppState()
 	if err != nil || ipAddr == (netip.Addr{}) || !ipAddr.IsValid() {
-		return false, 0
+		return false, bannedUntil
 	}
 
 	// Check if IP is currently blocked
@@ -96,58 +163,54 @@ func IsClientRateLimited(limiterType string, ipAddr netip.Addr) (limited bool, r
 	if blocked {
 		appState.bannedClientsMu.Lock()
 		defer appState.bannedClientsMu.Unlock()
-		if banDuration, exists := appState.bannedClients[ipAddr]; exists {
-			if curTime := time.Now(); curTime.Before(curTime.Add(banDuration)) {
+		if bannedUntil, exists := appState.bannedClients[ipAddr]; exists {
+			if time.Now().After(bannedUntil) {
 				delete(appState.bannedClients, ipAddr) // Remove from banned list after ban expires
-				return true, banDuration
+				return false, bannedUntil
 			}
-			return true, banDuration
+			return true, bannedUntil
 		}
 	}
 
-	limiter := GetLimiter(ipAddr)
+	limiter := GetClientLimiter(ipAddr, limiterType)
 
 	// Use Allow() to check if the request can proceed immediately.
 	// If it returns false, the rate limit has been exceeded.
 	if !limiter.Allow() {
-		appState.banList.Load().Block(ipAddr)
-		return true, appState.banList.Load().banPeriod
+		appState.bannedClientsMu.Lock()
+		defer appState.bannedClientsMu.Unlock()
+		appState.bannedClients[ipAddr] = bannedUntil
+
+		return true, bannedUntil
 	}
 
-	return false, 0
+	return false, time.Time{}
 }
 
-func CleanupOldLimiterEntries() (int64, error) {
-	appState, err := GetAppState()
+func CleanupOldLimiterEntries() (entriesDeleted int64, err error) {
+	as, err := GetAppState()
 	if err != nil {
-		return 0, errors.New("app state is not initialized")
+		return entriesDeleted, types.CannotGetAppStateError
 	}
 	now := time.Now()
 
-	var count int
-	// Clean up webServerLimiter
-	appState.webServerLimiter.Load().ClientMap.Range(func(key, value any) bool {
-		clientLimiter, ok := value.(ClientRateLimiter)
-		if !ok {
-			return true
+	cleanupLimiterMap := func(mu *sync.RWMutex, m map[netip.Addr]RateLimiter) int64 {
+		var deleted int64
+		mu.Lock()
+		defer mu.Unlock()
+		for ip, limiter := range m {
+			if now.Sub(limiter.LastSeen) > limitersCleanupInterval {
+				delete(m, ip)
+				deleted++
+			}
 		}
-		if now.Sub(clientLimiter.LastSeen) > 3*time.Minute {
-			appState.webServerLimiter.Load().ClientMap.Delete(key)
-			count++
-		}
-		return true
-	})
-	// File server limiter
-	appState.fileLimiter.Load().ClientMap.Range(func(key, value any) bool {
-		clientLimiter, ok := value.(ClientRateLimiter)
-		if !ok {
-			return true
-		}
-		if now.Sub(clientLimiter.LastSeen) > 3*time.Minute {
-			appState.fileLimiter.Load().ClientMap.Delete(key)
-			count++
-		}
-		return true
-	})
-	return int64(count), nil
+		return deleted
+	}
+
+	entriesDeleted += cleanupLimiterMap(&as.webServerLimiterMu, as.webServerLimiterMap)
+	entriesDeleted += cleanupLimiterMap(&as.apiLimiterMu, as.apiLimiterMap)
+	entriesDeleted += cleanupLimiterMap(&as.authLimiterMu, as.authLimiterMap)
+	entriesDeleted += cleanupLimiterMap(&as.fileLimiterMu, as.fileLimiterMap)
+
+	return entriesDeleted, nil
 }
