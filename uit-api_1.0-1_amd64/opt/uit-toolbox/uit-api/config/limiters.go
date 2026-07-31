@@ -3,34 +3,18 @@ package config
 import (
 	"errors"
 	"net/netip"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
 )
 
-type ClientLimiter struct {
-	IPAddr   netip.Addr
+type RateLimiter struct {
+	Type     string
 	Limiter  *rate.Limiter
 	LastSeen time.Time
 }
 
-type RateLimiter struct {
-	Type      string
-	ClientMap sync.Map // map[netip.Addr]ClientLimiter
-	Rate      float64
-	Burst     int
-}
-
-var (
-	webRateLimiter  atomic.Pointer[RateLimiter]
-	apiRateLimiter  atomic.Pointer[RateLimiter]
-	authRateLimiter atomic.Pointer[RateLimiter]
-	fileRateLimiter atomic.Pointer[RateLimiter]
-)
-
-func GetLimiter(limiterType string) *RateLimiter {
+func GetGlobalLimiters(limiterType string) *RateLimiter {
 	appState, err := GetAppState()
 	if err != nil {
 		return nil
@@ -50,29 +34,55 @@ func GetLimiter(limiterType string) *RateLimiter {
 	}
 }
 
-func (rateLimiter *RateLimiter) Get(ipAddr netip.Addr) *rate.Limiter {
-	if rateLimiter == nil {
-		return nil
+func (rl *RateLimiter) GetLimiter(ipAddr netip.Addr) *rate.Limiter {
+	defaultLimiter := rate.NewLimiter(rate.Limit(1), 5) // Default rate limit if not found
+	if ipAddr == (netip.Addr{}) || !ipAddr.IsValid() {
+		return defaultLimiter
 	}
-	if ipKey, ok := rateLimiter.ClientMap.Load(ipAddr); ok {
-		if clientLimiter, ok2 := ipKey.(ClientLimiter); ok2 && clientLimiter.Limiter != nil {
-			// Update last seen time
-			clientLimiter.LastSeen = time.Now()
-			// Store updated entry
-			rateLimiter.ClientMap.Store(ipAddr, clientLimiter)
-			return clientLimiter.Limiter
-		}
+
+	rl.ClientMapMu.Lock()
+	defer rl.ClientMapMu.Unlock()
+	var crl ClientRateLimiter
+	var ipExists bool
+	if crl, ipExists = rl.ClientMap[ipAddr]; !ipExists {
+		return defaultLimiter
 	}
-	limiter := rate.NewLimiter(rate.Limit(rateLimiter.Rate), rateLimiter.Burst)
-	rateLimiter.ClientMap.Store(ipAddr, ClientLimiter{Limiter: limiter, LastSeen: time.Now()})
-	return limiter
+
+	newCrl := new(ClientRateLimiter)
+	newCrl.LastSeen = time.Now()
+	newCrl.Limiter = crl.Limiter
+
+	rl.ClientMap[ipAddr] = *newCrl
+
+	return newCrl.Limiter
 }
 
-func (bannedClients *BanList) Block(ip netip.Addr) {
-	if bannedClients == nil || ip == (netip.Addr{}) || !ip.IsValid() {
+func BlockIP(ip netip.Addr) {
+	appState, err := GetAppState()
+	if err != nil || appState == nil {
 		return
 	}
-	bannedClients.bannedClients.Store(ip, ClientLimiter{LastSeen: time.Now()})
+	appState.bannedClientsMu.Lock()
+	defer appState.bannedClientsMu.Unlock()
+	if _, exists := appState.bannedClients[ip]; !exists {
+		appState.bannedClients[ip] = banPeriod
+	}
+}
+
+func IsIPBlocked(ip netip.Addr) bool {
+	appState, err := GetAppState()
+	if err != nil || appState == nil {
+		return false
+	}
+
+	appState.bannedClientsMu.RLock()
+	defer appState.bannedClientsMu.RUnlock()
+	for blockedIP, _ := range appState.bannedClients {
+		if blockedIP == ip {
+			return true
+		}
+	}
+	return false
 }
 
 func IsClientRateLimited(limiterType string, ipAddr netip.Addr) (limited bool, retryAfter time.Duration) {
@@ -82,23 +92,20 @@ func IsClientRateLimited(limiterType string, ipAddr netip.Addr) (limited bool, r
 	}
 
 	// Check if IP is currently blocked
-	if clientMapValue, clientBlocked := appState.banList.Load().bannedClients.Load(ipAddr); clientBlocked {
-		if clientLimiter, ok := clientMapValue.(ClientLimiter); ok {
-			blockedUntil := clientLimiter.LastSeen.Add(appState.banList.Load().banPeriod)
-			if curTime := time.Now(); curTime.Before(blockedUntil) {
-				return true, blockedUntil.Sub(curTime)
+	blocked := IsIPBlocked(ipAddr)
+	if blocked {
+		appState.bannedClientsMu.Lock()
+		defer appState.bannedClientsMu.Unlock()
+		if banDuration, exists := appState.bannedClients[ipAddr]; exists {
+			if curTime := time.Now(); curTime.Before(curTime.Add(banDuration)) {
+				delete(appState.bannedClients, ipAddr) // Remove from banned list after ban expires
+				return true, banDuration
 			}
-			// If ban has expired, remove from blocked list
-			appState.banList.Load().bannedClients.Delete(ipAddr)
+			return true, banDuration
 		}
 	}
 
-	rateLimiter := GetLimiter(limiterType)
-	if rateLimiter == nil {
-		return false, 0
-	}
-
-	limiter := rateLimiter.Get(ipAddr)
+	limiter := GetLimiter(ipAddr)
 
 	// Use Allow() to check if the request can proceed immediately.
 	// If it returns false, the rate limit has been exceeded.
@@ -120,7 +127,7 @@ func CleanupOldLimiterEntries() (int64, error) {
 	var count int
 	// Clean up webServerLimiter
 	appState.webServerLimiter.Load().ClientMap.Range(func(key, value any) bool {
-		clientLimiter, ok := value.(ClientLimiter)
+		clientLimiter, ok := value.(ClientRateLimiter)
 		if !ok {
 			return true
 		}
@@ -132,7 +139,7 @@ func CleanupOldLimiterEntries() (int64, error) {
 	})
 	// File server limiter
 	appState.fileLimiter.Load().ClientMap.Range(func(key, value any) bool {
-		clientLimiter, ok := value.(ClientLimiter)
+		clientLimiter, ok := value.(ClientRateLimiter)
 		if !ok {
 			return true
 		}
