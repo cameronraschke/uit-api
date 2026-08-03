@@ -194,11 +194,11 @@ func ConvertAndCheckIPStr(ipPtr *string) (ipAddr *netip.Addr, err error) {
 		return nil, fmt.Errorf("failed to parse IP address: %w", err)
 	}
 
-	if ipAddr.IsUnspecified() || !ipAddr.IsValid() {
-		return nil, fmt.Errorf("unspecified or invalid IP address: %s", ipAddr.String())
+	if ip.IsUnspecified() || !ip.IsValid() {
+		return nil, fmt.Errorf("unspecified or invalid IP address: %s", ip.String())
 	}
-	if ipAddr.IsInterfaceLocalMulticast() || ipAddr.IsLinkLocalMulticast() || ipAddr.IsMulticast() {
-		return nil, fmt.Errorf("multicast IP address not allowed: %s", ipAddr.String())
+	if ip.IsInterfaceLocalMulticast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
+		return nil, fmt.Errorf("multicast IP address not allowed: %s", ip.String())
 	}
 
 	return &ip, nil
