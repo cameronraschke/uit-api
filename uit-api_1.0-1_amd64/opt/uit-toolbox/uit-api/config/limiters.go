@@ -30,6 +30,14 @@ type RateLimiter struct {
 	LastSeen time.Time
 }
 
+func nextBanExpiry(now time.Time) time.Time {
+	banDuration := rateLimitBanDuration
+	if banDuration <= 0 {
+		banDuration = time.Minute // Default ban duration if not set
+	}
+	return now.Add(banDuration)
+}
+
 func (lt LimiterType) newLimiter() *rate.Limiter {
 	switch lt {
 	case APILimiter:
@@ -204,9 +212,11 @@ func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool
 	// Use Allow() to check if the request can proceed immediately.
 	// If it returns false, the rate limit has been exceeded.
 	if !ratelimiter.Allow() {
-		banExpiry := time.Now().Add(time.Minute)
-		if bannedUntil != nil {
-			banExpiry = bannedUntil()
+		now := time.Now()
+		banExpiry := nextBanExpiry(now)
+		// Default ban
+		if !banExpiry.After(now) {
+			banExpiry = now.Add(time.Minute)
 		}
 		as.bannedClientsMu.Lock()
 		as.bannedClients[ipAddr] = banExpiry
@@ -224,8 +234,9 @@ func IsIPBlocked(ipAddr netip.Addr) (isBlocked bool, blockedUntil time.Time) {
 
 	as.bannedClientsMu.Lock()
 	defer as.bannedClientsMu.Unlock()
+	now := time.Now()
 	if blockedUntil, exists := as.bannedClients[ipAddr]; exists {
-		if time.Now().After(blockedUntil) {
+		if !blockedUntil.After(now) {
 			delete(as.bannedClients, ipAddr) // Remove from banned list after ban expires
 			return false, blockedUntil
 		}
@@ -242,7 +253,7 @@ func BlockIP(ip netip.Addr) {
 	appState.bannedClientsMu.Lock()
 	defer appState.bannedClientsMu.Unlock()
 	if _, exists := appState.bannedClients[ip]; !exists {
-		appState.bannedClients[ip] = bannedUntil()
+		appState.bannedClients[ip] = nextBanExpiry(time.Now())
 	}
 }
 

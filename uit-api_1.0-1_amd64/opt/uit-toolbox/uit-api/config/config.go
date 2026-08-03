@@ -128,7 +128,7 @@ const (
 
 var (
 	appStateInstance      atomic.Pointer[AppState]
-	bannedUntil           func() time.Time
+	rateLimitBanDuration  time.Duration
 	webServerRateLimiter  RateLimiter
 	apiRateLimiter        RateLimiter
 	authRateLimiter       RateLimiter
@@ -334,8 +334,8 @@ func InitApp() (*AppState, error) {
 	appState.bannedClients = make(map[netip.Addr]time.Time)
 	appState.bannedClientsMu.Unlock()
 
-	// Initialize ban list
-	bannedUntil = func() time.Time { return time.Now().Add(appConfig.RateLimitBanDuration) }
+	// Initialize ban duration
+	rateLimitBanDuration = appConfig.RateLimitBanDuration
 
 	// Initialize logger
 

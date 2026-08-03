@@ -140,7 +140,7 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if isBlocked, blockedUntil := config.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
-			// log.Debug("Request received from blocked IP")
+			log.Info(fmt.Sprintf("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil))
 			WriteJsonError(w, http.StatusForbidden)
 			return
 		}
