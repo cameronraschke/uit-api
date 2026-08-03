@@ -232,4 +232,3 @@ func GetWebEndpointRedirectURL(webEndpoint *WebEndpointConfig) (string, error) {
 	}
 	return webEndpoint.RedirectURL, nil
 }
-

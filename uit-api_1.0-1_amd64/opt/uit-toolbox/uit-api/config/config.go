@@ -20,6 +20,7 @@ import (
 	"uit-api/types"
 
 	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -66,11 +67,6 @@ type AppConfiguration struct {
 	WebmasterEmail       string         `json:"UIT_WEBMASTER_EMAIL"`
 }
 
-type BanList struct {
-	bannedClients sync.Map // map[netip.Addr]ClientLimiter
-	banPeriod     time.Duration
-}
-
 type ClientConfig struct {
 	UIT_CLIENT_DB_USER   string `json:"UIT_CLIENT_DB_USER"`
 	UIT_CLIENT_DB_PASSWD string `json:"UIT_CLIENT_DB_PASSWD"`
@@ -89,23 +85,29 @@ type ClientConfig struct {
 }
 
 type AppState struct {
+	appStateMu           sync.Mutex
 	appConfig            atomic.Pointer[AppConfiguration]
 	dbConn               atomic.Pointer[sql.DB]
 	pgxPool              atomic.Pointer[pgxpool.Pool]
 	authMapMutex         sync.RWMutex
 	authMap              map[string]types.AuthSession
 	appLogger            atomic.Pointer[slog.Logger]
-	webServerLimiter     atomic.Pointer[RateLimiter]
-	fileLimiter          atomic.Pointer[RateLimiter]
-	apiLimiter           atomic.Pointer[RateLimiter]
-	authLimiter          atomic.Pointer[RateLimiter]
-	banList              atomic.Pointer[BanList]
+	webServerLimiterMu   sync.RWMutex
+	webServerLimiterMap  map[netip.Addr]RateLimiter
+	fileLimiterMu        sync.RWMutex
+	fileLimiterMap       map[netip.Addr]RateLimiter
+	apiLimiterMu         sync.RWMutex
+	apiLimiterMap        map[netip.Addr]RateLimiter
+	authLimiterMu        sync.RWMutex
+	authLimiterMap       map[netip.Addr]RateLimiter
+	bannedClientsMu      sync.RWMutex
+	bannedClients        map[netip.Addr]time.Time
 	allowedWANIPs        sync.Map
 	allowedLANIPs        sync.Map
 	allAllowedIPs        sync.Map
 	sessionSecret        []byte
-	apiRequestTimeout    atomic.Pointer[time.Duration]
-	fileRequestTimeout   atomic.Pointer[time.Duration]
+	apiRequestTimeout    atomic.Int64
+	fileRequestTimeout   atomic.Int64
 	webEndpoints         sync.Map
 	ClientRealtimeDataMu sync.RWMutex
 	ClientRealtimeData   map[int64]types.JobQueueRealtimeData
@@ -113,8 +115,24 @@ type AppState struct {
 	userPermissions      sync.Map
 }
 
+const (
+	webServerRateLimitInterval = 1.0  // requests per second
+	webServerRateLimitBurst    = 5    // maximum burst size
+	apiRateLimitInterval       = 1.0  // requests per second
+	apiRateLimitBurst          = 5    // maximum burst size
+	authRateLimitInterval      = 0.5  // requests per second
+	authRateLimitBurst         = 2    // maximum burst size
+	fileRateLimitInterval      = 0.25 // requests per second
+	fileRateLimitBurst         = 1    // maximum burst size
+)
+
 var (
-	appStateInstance atomic.Pointer[AppState]
+	appStateInstance      atomic.Pointer[AppState]
+	bannedUntil           func() time.Time
+	webServerRateLimiter  RateLimiter
+	apiRateLimiter        RateLimiter
+	authRateLimiter       RateLimiter
+	fileServerRateLimiter RateLimiter
 )
 
 type levelRangeHandler struct {
@@ -266,32 +284,6 @@ func InitApp() (*AppState, error) {
 		return nil, errors.New("failed to load app config: " + err.Error())
 	}
 
-	// Initialize rate limiters
-	webRateLimiter.Store(&RateLimiter{
-		Type:      "webserver",
-		ClientMap: sync.Map{},
-		Rate:      appConfig.RateLimitInterval,
-		Burst:     appConfig.RateLimitBurst,
-	})
-	apiRateLimiter.Store(&RateLimiter{
-		Type:      "api",
-		ClientMap: sync.Map{},
-		Rate:      appConfig.RateLimitInterval,
-		Burst:     appConfig.RateLimitBurst,
-	})
-	authRateLimiter.Store(&RateLimiter{
-		Type:      "auth",
-		ClientMap: sync.Map{},
-		Rate:      appConfig.RateLimitInterval / 2,
-		Burst:     appConfig.RateLimitBurst / 2,
-	})
-	fileRateLimiter.Store(&RateLimiter{
-		Type:      "file",
-		ClientMap: sync.Map{},
-		Rate:      appConfig.RateLimitInterval / 4,
-		Burst:     appConfig.RateLimitBurst / 4,
-	})
-
 	appState := new(AppState)
 
 	// Store app config in app state
@@ -302,16 +294,48 @@ func InitApp() (*AppState, error) {
 	appState.pgxPool.Store(nil)
 
 	// Store rate limiters in app state
-	appState.webServerLimiter.Store(webRateLimiter.Load())
-	appState.fileLimiter.Store(fileRateLimiter.Load())
-	appState.apiLimiter.Store(apiRateLimiter.Load())
-	appState.authLimiter.Store(authRateLimiter.Load())
-	// Initialize ban list
-	banList := &BanList{
-		bannedClients: sync.Map{},
-		banPeriod:     appConfig.RateLimitBanDuration,
+	appState.webServerLimiterMu.Lock()
+	appState.webServerLimiterMap = make(map[netip.Addr]RateLimiter)
+	webServerRateLimiter = RateLimiter{
+		Type:     "web",
+		Limiter:  rate.NewLimiter(rate.Limit(webServerRateLimitInterval), webServerRateLimitBurst),
+		LastSeen: time.Time{},
 	}
-	appState.banList.Store(banList)
+	appState.webServerLimiterMu.Unlock()
+
+	appState.apiLimiterMu.Lock()
+	appState.apiLimiterMap = make(map[netip.Addr]RateLimiter)
+	apiRateLimiter = RateLimiter{
+		Type:     "api",
+		Limiter:  rate.NewLimiter(rate.Limit(apiRateLimitInterval), apiRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	appState.apiLimiterMu.Unlock()
+
+	appState.authLimiterMu.Lock()
+	appState.authLimiterMap = make(map[netip.Addr]RateLimiter)
+	authRateLimiter = RateLimiter{
+		Type:     "auth",
+		Limiter:  rate.NewLimiter(rate.Limit(authRateLimitInterval), authRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	appState.authLimiterMu.Unlock()
+
+	appState.fileLimiterMu.Lock()
+	appState.fileLimiterMap = make(map[netip.Addr]RateLimiter)
+	fileServerRateLimiter = RateLimiter{
+		Type:     "file",
+		Limiter:  rate.NewLimiter(rate.Limit(fileRateLimitInterval), fileRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	appState.fileLimiterMu.Unlock()
+
+	appState.bannedClientsMu.Lock()
+	appState.bannedClients = make(map[netip.Addr]time.Time)
+	appState.bannedClientsMu.Unlock()
+
+	// Initialize ban list
+	bannedUntil = func() time.Time { return time.Now().Add(appConfig.RateLimitBanDuration) }
 
 	// Initialize logger
 
@@ -397,8 +421,8 @@ func InitApp() (*AppState, error) {
 	}
 
 	// Set initial timeouts
-	appState.apiRequestTimeout.Store(&appConfig.APIRequestTimeout)
-	appState.fileRequestTimeout.Store(&appConfig.FileRequestTimeout)
+	appState.apiRequestTimeout.Store(int64(appConfig.APIRequestTimeout))
+	appState.fileRequestTimeout.Store(int64(appConfig.FileRequestTimeout))
 
 	// Init AuthMap
 	appState.authMap = make(map[string]types.AuthSession)
@@ -410,24 +434,13 @@ func InitApp() (*AppState, error) {
 	appState.ClientRealtimeDataMu.Unlock()
 
 	// Declare endpoints
-	if err := SetAppState(appState); err != nil {
-		return nil, errors.New("Could not set app state: " + err.Error())
-	}
+	once := new(sync.Once)
+	once.Do(func() {
+		appState.appStateMu.Lock()
+		defer appState.appStateMu.Unlock()
+		appStateInstance.Store(appState)
+	})
 	return appState, nil
-}
-
-// App state management
-func SetAppState(newState *AppState) error {
-	var mu sync.Mutex
-	mu.Lock()
-	defer mu.Unlock()
-
-	if newState == nil {
-		return fmt.Errorf("cannot set app state to nil value")
-	}
-
-	appStateInstance.Store(newState)
-	return nil
 }
 
 func GetAppState() (*AppState, error) {
@@ -545,36 +558,50 @@ func SetPGXPool(newPool *pgxpool.Pool) error {
 }
 
 // IP address checks
-func IsIPAllowed(trafficType string, ipAddr netip.Addr) (allowed bool, err error) {
+func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (allowed bool, retryAt time.Time, err error) {
 	appState, err := GetAppState()
 	if err != nil {
-		return allowed, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return allowed, retryAt, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+	}
+	if !ipAddr.IsValid() {
+		return allowed, retryAt, fmt.Errorf("request IP is invalid or blocked")
 	}
 
-	if !ipAddr.IsValid() || RequestIPBlocked(ipAddr) {
-		return allowed, fmt.Errorf("request IP is invalid or blocked")
+	var lt LimiterType
+	if strings.TrimSpace(limiterType) != "" {
+		lt = ToLimiterType(limiterType)
+		if !lt.IsValid() {
+			return true, retryAt, fmt.Errorf("invalid limiter type: %s", limiterType)
+		}
 	}
 
-	switch strings.TrimSpace(strings.ToLower(trafficType)) {
+	switch strings.TrimSpace(strings.ToLower(networkDomain)) {
 	case "wan":
 		allowed, err = ipAllowedInRanges(ipAddr, &appState.allowedWANIPs)
 		if err != nil {
-			return allowed, fmt.Errorf("error checking WAN IP ranges: %w", err)
+			return allowed, retryAt, fmt.Errorf("error checking WAN IP ranges: %w", err)
 		}
 	case "lan":
 		allowed, err = ipAllowedInRanges(ipAddr, &appState.allowedLANIPs)
 		if err != nil {
-			return allowed, fmt.Errorf("error checking LAN IP ranges: %w", err)
+			return allowed, retryAt, fmt.Errorf("error checking LAN IP ranges: %w", err)
 		}
 	case "any":
 		allowed, err = ipAllowedInRanges(ipAddr, &appState.allAllowedIPs)
 		if err != nil {
-			return allowed, fmt.Errorf("error checking IP ranges: %w", err)
+			return allowed, retryAt, fmt.Errorf("error checking IP ranges: %w", err)
 		}
 	default:
-		return allowed, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
+		return allowed, retryAt, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
 	}
-	return allowed, nil
+
+	if lt.IsValid() {
+		isRateLimited, bannedUntil := lt.IsClientRateLimited(ipAddr)
+		if isRateLimited {
+			return false, bannedUntil, fmt.Errorf("client is rate limited until %s", bannedUntil.Format(time.RFC3339))
+		}
+	}
+	return allowed, retryAt, nil
 }
 
 func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err error) {
@@ -601,47 +628,21 @@ func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err e
 	return allowed, nil
 }
 
-func RequestIPBlocked(ip netip.Addr) bool {
-	if !ip.IsValid() {
-		return true
-	}
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return true
-	}
-
-	bannedClient, ok := as.banList.Load().bannedClients.Load(ip)
-	if !ok || bannedClient == nil {
-		return false
-	}
-
-	bannedClientLimiter, ok := bannedClient.(ClientLimiter)
-	if !ok || bannedClientLimiter == (ClientLimiter{}) {
-		return false
-	}
-
-	if time.Now().Before(bannedClientLimiter.LastSeen.Add(as.banList.Load().banPeriod)) {
-		return true
-	}
-
-	as.banList.Load().bannedClients.Delete(ip)
-	return false
-}
-
 func CleanupBlockedIPs() {
-	appState, err := GetAppState()
+	as, err := GetAppState()
 	if err != nil {
 		return
 	}
 
-	blockedIPMap := &appState.banList.Load().bannedClients
-	blockedIPMap.Range(func(k, v any) bool {
-		value := v.(ClientLimiter)
-		if time.Now().After(value.LastSeen.Add(appState.banList.Load().banPeriod)) {
-			blockedIPMap.Delete(k)
+	as.bannedClientsMu.Lock()
+	defer as.bannedClientsMu.Unlock()
+
+	now := time.Now()
+	for ip, bannedUntil := range as.bannedClients {
+		if now.After(bannedUntil) {
+			delete(as.bannedClients, ip)
 		}
-		return true
-	})
+	}
 }
 
 // Webserver config
@@ -737,16 +738,16 @@ func GetRequestTimeout(timeoutType string) (time.Duration, error) {
 	switch strings.ToLower(timeoutType) {
 	case "api":
 		apiTimeout := appState.apiRequestTimeout.Load()
-		if apiTimeout == nil {
+		if apiTimeout == 0 {
 			return 0, fmt.Errorf("%w: cannot get API request timeout in GetRequestTimeout", types.CannotGetAppStateError)
 		}
-		return *apiTimeout, nil
+		return time.Duration(apiTimeout), nil
 	case "file":
 		fileTimeout := appState.fileRequestTimeout.Load()
-		if fileTimeout == nil {
+		if fileTimeout == 0 {
 			return 0, fmt.Errorf("%w: cannot get file request timeout in GetRequestTimeout", types.CannotGetAppStateError)
 		}
-		return *fileTimeout, nil
+		return time.Duration(fileTimeout), nil
 	default:
 		return 0, fmt.Errorf("invalid timeout type: %s", timeoutType)
 	}
@@ -762,10 +763,10 @@ func SetRequestTimeout(timeoutType string, timeout time.Duration) error {
 	}
 	switch strings.TrimSpace(strings.ToLower(timeoutType)) {
 	case "api":
-		appState.apiRequestTimeout.Store(&timeout)
+		appState.apiRequestTimeout.Store(int64(timeout))
 		return nil
 	case "file":
-		appState.fileRequestTimeout.Store(&timeout)
+		appState.fileRequestTimeout.Store(int64(timeout))
 		return nil
 	default:
 		return fmt.Errorf("invalid timeout type: %s", timeoutType)
