@@ -179,39 +179,29 @@ func ConvertAndVerifyTagnumber(tagStr string) (*int64, error) {
 	return &tag, nil
 }
 
-func ValidateIPAddress(ipAddr *netip.Addr) error {
-	if ipAddr == nil {
-		return fmt.Errorf("nil IP address")
-	}
-	if ipAddr.IsUnspecified() || !ipAddr.IsValid() {
-		return fmt.Errorf("unspecified or invalid IP address: %s", ipAddr.String())
-	}
-	if ipAddr.IsInterfaceLocalMulticast() || ipAddr.IsLinkLocalMulticast() || ipAddr.IsMulticast() {
-		return fmt.Errorf("multicast IP address not allowed: %s", ipAddr.String())
-	}
-	return nil
-}
-
-func ConvertAndCheckIPStr(ipPtr *string) (ipAddr *netip.Addr, isLoopback bool, isLocal bool, err error) {
+func ConvertAndCheckIPStr(ipPtr *string) (ipAddr *netip.Addr, err error) {
 	if ipPtr == nil {
-		return nil, false, false, fmt.Errorf("nil IP address")
+		return nil, fmt.Errorf("nil IP address")
 	}
 
 	ipStr := strings.TrimSpace(*ipPtr)
 	if ipStr == "" {
-		return nil, false, false, fmt.Errorf("empty IP address")
+		return nil, fmt.Errorf("empty IP address")
 	}
 
 	ip, err := netip.ParseAddr(ipStr)
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to parse IP address: %w", err)
+		return nil, fmt.Errorf("failed to parse IP address: %w", err)
 	}
 
-	if err := ValidateIPAddress(&ip); err != nil {
-		return nil, false, false, fmt.Errorf("invalid IP address: %w", err)
+	if ipAddr.IsUnspecified() || !ipAddr.IsValid() {
+		return nil, fmt.Errorf("unspecified or invalid IP address: %s", ipAddr.String())
+	}
+	if ipAddr.IsInterfaceLocalMulticast() || ipAddr.IsLinkLocalMulticast() || ipAddr.IsMulticast() {
+		return nil, fmt.Errorf("multicast IP address not allowed: %s", ipAddr.String())
 	}
 
-	return &ip, ip.IsLoopback(), ip.IsPrivate(), nil
+	return &ip, nil
 }
 
 func IsPrintableASCII(b []byte) bool {

@@ -996,19 +996,29 @@ func GetAllOnlineClientsData() (clientDataCopy map[int64]types.JobQueueRealtimeD
 	return clientDataCopy, nil
 }
 
-func (as *AppState) ClearLiveImageBytes() error {
+func ClearOfflineLiveImageBytes() (entriesCleared int64, entriesSkipped int64, totalEntries int64) {
+	as, err := GetAppState()
+	if err != nil || as == nil {
+		return entriesCleared, entriesSkipped, totalEntries
+	}
 	now := time.Now()
 	as.ClientRealtimeDataMu.Lock()
 	defer as.ClientRealtimeDataMu.Unlock()
 	for tag, clientData := range as.ClientRealtimeData {
 		if len(clientData.LiveImageBytes) > 0 {
-			if clientData.LastHeard == nil || clientData.LastHeard.IsZero() || clientData.LastHeard.Add(types.LastHeardTimeout).Before(now) {
+			if clientData.LastHeard.IsZero() || clientData.LastHeard.Add(types.LastHeardTimeout).Before(now) {
 				clientData.LiveImageBytes = nil
 				as.ClientRealtimeData[tag] = clientData
+				atomic.AddInt64(&entriesCleared, 1)
+			} else {
+				atomic.AddInt64(&totalEntries, 1)
 			}
+		} else {
+			atomic.AddInt64(&entriesSkipped, 1)
+			atomic.AddInt64(&totalEntries, 1)
 		}
 	}
-	return nil
+	return entriesCleared, entriesSkipped, totalEntries
 }
 
 func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtimeData, err error) {

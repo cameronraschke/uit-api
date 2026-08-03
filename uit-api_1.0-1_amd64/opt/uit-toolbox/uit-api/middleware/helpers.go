@@ -238,9 +238,6 @@ func GetWebEndpointConfigFromContext(ctx context.Context) (endpoint config.WebEn
 }
 
 func withClientIP(ctx context.Context, ip netip.Addr) (context.Context, error) {
-	if err := types.ValidateIPAddress(&ip); err != nil {
-		return ctx, fmt.Errorf("IP address stored in context is invalid: %w", err)
-	}
 	// Use validated IP address here from checkValidIP
 	return context.WithValue(ctx, clientIPKey, ip), nil
 }
@@ -248,9 +245,6 @@ func GetRequestIPFromContext(ctx context.Context) (ipAddr netip.Addr, err error)
 	ip, ok := ctx.Value(clientIPKey).(netip.Addr)
 	if !ok {
 		return netip.Addr{}, fmt.Errorf("IP address not found in context")
-	}
-	if err := types.ValidateIPAddress(&ip); err != nil {
-		return netip.Addr{}, fmt.Errorf("IP address stored in context is invalid: %w", err)
 	}
 	return ip, nil
 }

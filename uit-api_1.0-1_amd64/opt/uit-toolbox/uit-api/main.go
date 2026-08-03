@@ -156,12 +156,12 @@ func main() {
 				select {
 				case errChan <- fmt.Errorf("background process panic: %v", recoveryErr):
 				default:
-					log.Warn("Error channel full, cannot send panic error (func main - backgroundProcesses)")
+					log.Warn("Error channel full, cannot send panic error (func main - startBackgroundProcesses)")
 				}
 			}
 		}()
 		log.Info("Starting background processes...")
-		backgroundProcesses(ctx, errChan)
+		startBackgroundProcesses(ctx, errChan)
 	})
 
 	log.Info("Servers started in: " + time.Since(startTime).String())

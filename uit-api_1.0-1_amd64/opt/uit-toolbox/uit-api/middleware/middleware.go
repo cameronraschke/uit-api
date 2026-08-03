@@ -112,18 +112,18 @@ func StoreClientIPMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		reqAddr, _, _, err := types.ConvertAndCheckIPStr(&requestIPStr)
+		reqAddr, err := types.ConvertAndCheckIPStr(&requestIPStr)
 		if err != nil {
-			log.Warn("Cannot convert request IP: " + err.Error())
+			log.Warn("invalid request IP: " + err.Error())
 			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 
-		// withClientIP parses and casts the IP address to netip.Addr
+		// withClientIP stores netip.Addr in context
 		ctx, err := withClientIP(req.Context(), *reqAddr)
 		if err != nil {
-			log.Error("Cannot store request IP in context: " + err.Error())
-			WriteJsonError(w, http.StatusBadRequest)
+			log.Error("cannot store request IP in context: " + err.Error())
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		next.ServeHTTP(w, req.WithContext(ctx))
@@ -146,6 +146,37 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, req)
 	})
+}
+
+func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			log := GetLoggerFromContext(req.Context()).With(slog.String("func", "AllowIPRangeMiddleware"))
+			if strings.TrimSpace(trafficSource) == "" {
+				log.Warn("No traffic source specified")
+				WriteJsonError(w, http.StatusInternalServerError)
+				return
+			}
+			reqAddr, err := GetRequestIPFromContext(req.Context())
+			if err != nil {
+				log.Warn("Cannot retrieve IP from context: " + err.Error())
+				WriteJsonError(w, http.StatusInternalServerError)
+				return
+			}
+			allowed, _, err := config.IsIPAllowed(trafficSource, "", reqAddr)
+			if err != nil {
+				log.Error("Cannot check if IP is allowed: " + err.Error())
+				WriteJsonError(w, http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
+				log.Warn("Request IP is not in allowed range: " + reqAddr.String())
+				WriteJsonError(w, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	}
 }
 
 func WebEndpointConfigMiddleware(next http.Handler) http.Handler {
@@ -242,37 +273,6 @@ func CheckHttpVersionMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, req)
 	})
-}
-
-func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			log := GetLoggerFromContext(req.Context()).With(slog.String("func", "AllowIPRangeMiddleware"))
-			if strings.TrimSpace(trafficSource) == "" {
-				log.Warn("No traffic source specified")
-				WriteJsonError(w, http.StatusInternalServerError)
-				return
-			}
-			reqAddr, err := GetRequestIPFromContext(req.Context())
-			if err != nil {
-				log.Warn("Cannot retrieve IP from context: " + err.Error())
-				WriteJsonError(w, http.StatusInternalServerError)
-				return
-			}
-			allowed, _, err := config.IsIPAllowed(trafficSource, "", reqAddr)
-			if err != nil {
-				log.Error("Cannot check if IP is allowed: " + err.Error())
-				WriteJsonError(w, http.StatusInternalServerError)
-				return
-			}
-			if !allowed {
-				log.Warn("Request IP is not in allowed range: " + reqAddr.String())
-				WriteJsonError(w, http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, req)
-		})
-	}
 }
 
 func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
