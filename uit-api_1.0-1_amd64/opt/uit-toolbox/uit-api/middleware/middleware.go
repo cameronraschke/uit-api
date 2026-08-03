@@ -140,7 +140,7 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if isBlocked, blockedUntil := config.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
-			log.Info(fmt.Sprintf("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil))
+			// log.Info(fmt.Sprintf("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil))
 			WriteJsonError(w, http.StatusForbidden)
 			return
 		}
@@ -906,7 +906,7 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 			errors.Is(bearerErr, http.ErrNoCookie) {
 			/* errors.Is(csrfErr, http.ErrNoCookie) */
 			// IP authentication for LAN clients (laptops)
-			log.Info("Request is missing required cookies, redirecting")
+			// log.Info("Request is missing required cookies, redirecting")
 			http.Redirect(w, req, redirectURL, http.StatusSeeOther)
 			return
 		}

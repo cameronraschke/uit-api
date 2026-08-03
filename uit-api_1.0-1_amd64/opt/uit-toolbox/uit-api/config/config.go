@@ -116,14 +116,14 @@ type AppState struct {
 }
 
 const (
-	webServerRateLimitInterval = 1.0  // requests per second
-	webServerRateLimitBurst    = 5    // maximum burst size
-	apiRateLimitInterval       = 1.0  // requests per second
-	apiRateLimitBurst          = 5    // maximum burst size
-	authRateLimitInterval      = 0.5  // requests per second
-	authRateLimitBurst         = 2    // maximum burst size
-	fileRateLimitInterval      = 0.25 // requests per second
-	fileRateLimitBurst         = 1    // maximum burst size
+	webServerRateLimitInterval = 25 // requests per second
+	webServerRateLimitBurst    = 75 // maximum burst size
+	apiRateLimitInterval       = 25 // requests per second
+	apiRateLimitBurst          = 75 // maximum burst size
+	authRateLimitInterval      = 10 // requests per second
+	authRateLimitBurst         = 20 // maximum burst size
+	fileRateLimitInterval      = 10 // requests per second
+	fileRateLimitBurst         = 30 // maximum burst size
 	defaultBanDuration         = 1 * time.Minute
 )
 
