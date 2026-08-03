@@ -124,6 +124,7 @@ const (
 	authRateLimitBurst         = 2    // maximum burst size
 	fileRateLimitInterval      = 0.25 // requests per second
 	fileRateLimitBurst         = 1    // maximum burst size
+	defaultBanDuration         = 1 * time.Minute
 )
 
 var (
@@ -336,6 +337,9 @@ func InitApp() (*AppState, error) {
 
 	// Initialize ban duration
 	rateLimitBanDuration = appConfig.RateLimitBanDuration
+	if rateLimitBanDuration <= 0 {
+		rateLimitBanDuration = defaultBanDuration
+	}
 
 	// Initialize logger
 
