@@ -27,8 +27,6 @@ func StartWebServer(ctx context.Context) error {
 		middleware.TLSMiddleware,
 		middleware.CheckHttpVersionMiddleware,
 		middleware.AllowIPRangeMiddleware("any"),
-		middleware.RateLimitMiddleware("web"),
-		middleware.APITimeoutMiddleware,
 		middleware.HTTPMethodMiddleware,
 		middleware.CheckValidURLMiddleware,
 		middleware.CheckHeadersMiddleware,
@@ -36,21 +34,40 @@ func StartWebServer(ctx context.Context) error {
 		middleware.CheckForRedirectsMiddleware,
 	)
 
+	httpsAPIBaseChain := httpsBaseChain.Append(
+		middleware.RateLimitMiddleware("api"),
+		middleware.APITimeoutMiddleware,
+	)
+
+	httpsWebBaseChain := httpsBaseChain.Append(
+		middleware.RateLimitMiddleware("web"),
+		middleware.APITimeoutMiddleware,
+	)
+
+	httpsAuthBaseChain := httpsBaseChain.Append(
+		middleware.RateLimitMiddleware("auth"),
+		middleware.APITimeoutMiddleware,
+	)
+
 	// No allowedFilesMiddleware here, as API calls do not serve files
-	httpsFullAPIChain := httpsBaseChain.Append(
+	httpsFullAPIChain := httpsAPIBaseChain.Append(
 		middleware.CookieAuthMiddleware,
 	)
 
-	httpsFullCookieAuthChain := httpsBaseChain.Append(
+	httpsFullAuthAPIChain := httpsAuthBaseChain.Append(
+		middleware.CookieAuthMiddleware,
+	)
+
+	httpsFullCookieAuthChain := httpsWebBaseChain.Append(
 		middleware.AllowedFilesMiddleware,
 		middleware.CookieAuthMiddleware,
 	)
 
-	httpsFullLoginChain := httpsBaseChain.Append(
+	httpsFullLoginChain := httpsAuthBaseChain.Append(
 		middleware.AllowedFilesMiddleware,
 	)
 
-	httpsFullLogoutChain := httpsBaseChain.Append(
+	httpsFullLogoutChain := httpsAuthBaseChain.Append(
 		middleware.CookieAuthMiddleware,
 	)
 
@@ -90,7 +107,7 @@ func StartWebServer(ctx context.Context) error {
 	httpsRouter.Handle("GET /api/client/job/disk_image/name", httpsFullAPIChain.ThenFunc(endpoints.GetDiskImageNameByModel))
 
 	// Web and auth
-	httpsRouter.Handle("GET /api/check_auth", httpsFullAPIChain.ThenFunc(endpoints.RejectRequest))
+	httpsRouter.Handle("GET /api/check_auth", httpsFullAuthAPIChain.ThenFunc(endpoints.RejectRequest))
 
 	// Misc
 	httpsRouter.Handle("GET /api/server_time", httpsFullAPIChain.ThenFunc(endpoints.GetServerTime))

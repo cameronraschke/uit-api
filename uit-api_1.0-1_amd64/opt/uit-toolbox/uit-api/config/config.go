@@ -330,6 +330,10 @@ func InitApp() (*AppState, error) {
 	}
 	appState.fileLimiterMu.Unlock()
 
+	appState.bannedClientsMu.Lock()
+	appState.bannedClients = make(map[netip.Addr]time.Time)
+	appState.bannedClientsMu.Unlock()
+
 	// Initialize ban list
 	bannedUntil = func() time.Time { return time.Now().Add(appConfig.RateLimitBanDuration) }
 
@@ -554,36 +558,50 @@ func SetPGXPool(newPool *pgxpool.Pool) error {
 }
 
 // IP address checks
-func IsIPAllowed(trafficType string, ipAddr netip.Addr) (allowed bool, err error) {
+func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (allowed bool, retryAt time.Time, err error) {
 	appState, err := GetAppState()
 	if err != nil {
-		return allowed, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return allowed, retryAt, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+	}
+	if !ipAddr.IsValid() {
+		return allowed, retryAt, fmt.Errorf("request IP is invalid or blocked")
 	}
 
-	if !ipAddr.IsValid() || IsIPBlocked(ipAddr) {
-		return allowed, fmt.Errorf("request IP is invalid or blocked")
+	var lt LimiterType
+	if strings.TrimSpace(limiterType) != "" {
+		lt = ToLimiterType(limiterType)
+		if !lt.IsValid() {
+			return true, retryAt, fmt.Errorf("invalid limiter type: %s", limiterType)
+		}
 	}
 
-	switch strings.TrimSpace(strings.ToLower(trafficType)) {
+	switch strings.TrimSpace(strings.ToLower(networkDomain)) {
 	case "wan":
 		allowed, err = ipAllowedInRanges(ipAddr, &appState.allowedWANIPs)
 		if err != nil {
-			return allowed, fmt.Errorf("error checking WAN IP ranges: %w", err)
+			return allowed, retryAt, fmt.Errorf("error checking WAN IP ranges: %w", err)
 		}
 	case "lan":
 		allowed, err = ipAllowedInRanges(ipAddr, &appState.allowedLANIPs)
 		if err != nil {
-			return allowed, fmt.Errorf("error checking LAN IP ranges: %w", err)
+			return allowed, retryAt, fmt.Errorf("error checking LAN IP ranges: %w", err)
 		}
 	case "any":
 		allowed, err = ipAllowedInRanges(ipAddr, &appState.allAllowedIPs)
 		if err != nil {
-			return allowed, fmt.Errorf("error checking IP ranges: %w", err)
+			return allowed, retryAt, fmt.Errorf("error checking IP ranges: %w", err)
 		}
 	default:
-		return allowed, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
+		return allowed, retryAt, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
 	}
-	return allowed, nil
+
+	if lt.IsValid() {
+		isRateLimited, bannedUntil := lt.IsClientRateLimited(ipAddr)
+		if isRateLimited {
+			return false, bannedUntil, fmt.Errorf("client is rate limited until %s", bannedUntil.Format(time.RFC3339))
+		}
+	}
+	return allowed, retryAt, nil
 }
 
 func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err error) {
@@ -608,35 +626,6 @@ func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err e
 		return true
 	})
 	return allowed, nil
-}
-
-func IsIPBlocked(ip netip.Addr) bool {
-	if !ip.IsValid() {
-		return true
-	}
-
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return true
-	}
-
-	as.bannedClientsMu.RLock()
-	defer as.bannedClientsMu.RUnlock()
-	bannedUntil, ok := as.bannedClients[ip]
-	if !ok {
-		return false
-	}
-
-	if time.Now().Before(bannedUntil) {
-		return true
-	} else {
-		// Ban has expired, remove from banned clients
-		as.bannedClientsMu.Lock()
-		delete(as.bannedClients, ip)
-		as.bannedClientsMu.Unlock()
-	}
-
-	return false
 }
 
 func CleanupBlockedIPs() {

@@ -139,7 +139,7 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		if config.IsIPBlocked(reqAddr) {
+		if isBlocked, blockedUntil := config.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
 			// log.Debug("Request received from blocked IP")
 			WriteJsonError(w, http.StatusForbidden)
 			return
@@ -259,7 +259,7 @@ func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handle
 				WriteJsonError(w, http.StatusInternalServerError)
 				return
 			}
-			allowed, err := config.IsIPAllowed(trafficSource, reqAddr)
+			allowed, _, err := config.IsIPAllowed(trafficSource, "", reqAddr)
 			if err != nil {
 				log.Error("Cannot check if IP is allowed: " + err.Error())
 				WriteJsonError(w, http.StatusInternalServerError)
@@ -275,7 +275,7 @@ func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handle
 	}
 }
 
-func RateLimitMiddleware(rateType string) func(http.Handler) http.Handler {
+func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			log := GetLoggerFromContext(req.Context()).With(slog.String("func", "RateLimitMiddleware"))
@@ -286,8 +286,15 @@ func RateLimitMiddleware(rateType string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// IsClientRateLimited assigns a rate limiter to the client IP if not already present
-			limited, retryAt := config.IsClientRateLimited(reqIP, rateType)
+			lt := config.ToLimiterType(limiterType)
+			if !lt.IsValid() {
+				log.Error("Invalid limiter type in middleware: " + limiterType)
+				WriteJsonError(w, http.StatusInternalServerError)
+				return
+			}
+
+			// IsClientRateLimited creates/updates a per-IP limiter entry and refreshes LastSeen.
+			limited, retryAt := lt.IsClientRateLimited(reqIP)
 			if limited {
 				log.Debug("Client is rate limited", slog.Time("retry_at", retryAt))
 				WriteJsonError(w, http.StatusTooManyRequests)
