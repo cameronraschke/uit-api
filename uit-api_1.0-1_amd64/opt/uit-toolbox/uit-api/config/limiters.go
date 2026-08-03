@@ -305,9 +305,8 @@ func CleanupOldLimiterEntries() (totalDeleted int64, totalEntries int64, err err
 					delete(val.m, ip)
 					atomic.AddInt64(&totalDeleted, 1)
 				}
+				atomic.AddInt64(&totalEntries, 1)
 			}
-			tempEntries := int64(len(val.m))
-			atomic.AddInt64(&totalEntries, tempEntries)
 		})
 	}
 	return totalDeleted, totalEntries, nil
