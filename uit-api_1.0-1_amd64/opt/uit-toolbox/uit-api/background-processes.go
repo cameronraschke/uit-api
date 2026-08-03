@@ -76,7 +76,7 @@ func backgroundProcesses(ctx context.Context, errChan chan error) {
 				}
 				return nil
 			case <-ticker.C:
-				logMsg, err := startAuthMapCleanup()
+				logMsg, err := cleanupAuthMap()
 				if err != nil {
 					log.Error(fmt.Sprintf("Error during auth map cleanup: %v", err))
 				}
@@ -120,6 +120,64 @@ func backgroundProcesses(ctx context.Context, errChan chan error) {
 		}
 	})
 
+	// Start rate limiter cleanup goroutine
+	errGroup.Go(func() error {
+		interval := 1 * time.Minute
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-errCtx.Done():
+				if !sendBackgroundLog(errCtx, logChan, "Rate limiter cleanup goroutine stopping...") {
+					if err := errCtx.Err(); err != nil {
+						return nil // No error on regular shutdown
+					}
+				}
+				return nil
+			case <-ticker.C:
+				logMsg, err := cleanupRateLimiterEntries()
+				if err != nil {
+					log.Error(fmt.Sprintf("Error during rate limiter cleanup: %v", err))
+				}
+				if !sendBackgroundLog(errCtx, logChan, logMsg) {
+					if err := errCtx.Err(); err != nil {
+						return nil // No error on regular shutdown
+					}
+				}
+			}
+		}
+	})
+
+	// Start banned clients cleanup goroutine
+	errGroup.Go(func() error {
+		interval := 1 * time.Minute
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-errCtx.Done():
+				if !sendBackgroundLog(errCtx, logChan, "Banned clients cleanup goroutine stopping...") {
+					if err := errCtx.Err(); err != nil {
+						return nil // No error on regular shutdown
+					}
+				}
+				return nil
+			case <-ticker.C:
+				logMsg, err := cleanupBannedClients()
+				if err != nil {
+					log.Error(fmt.Sprintf("Error during banned clients cleanup: %v", err))
+				}
+				if !sendBackgroundLog(errCtx, logChan, logMsg) {
+					if err := errCtx.Err(); err != nil {
+						return nil // No error on regular shutdown
+					}
+				}
+			}
+		}
+	})
+
 	log.Info("Background processes started")
 	if err := errGroup.Wait(); err != nil {
 		log.Error(fmt.Sprintf("Background processes exited with error: %v", err))
@@ -128,12 +186,28 @@ func backgroundProcesses(ctx context.Context, errChan chan error) {
 	}
 }
 
-func startAuthMapCleanup() (logMsg string, err error) {
+func cleanupAuthMap() (logMsg string, err error) {
 	originalSessionCount := config.GetAuthSessionCount()
 	config.ClearExpiredAuthSessions()
 	newSessionCount := config.GetAuthSessionCount()
 	sessionDiff := originalSessionCount - newSessionCount
-	return fmt.Sprintf("Auth session cleanup done (Sessions: %d, Expired: %d)", newSessionCount, sessionDiff), nil
+	return fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", newSessionCount, sessionDiff), nil
+}
+
+func cleanupRateLimiterEntries() (logMsg string, err error) {
+	entriesDeleted, totalEntries, err := config.CleanupOldLimiterEntries()
+	if err != nil {
+		return fmt.Sprintf("error cleaning up old rate limiter entries: %v", err), nil
+	}
+	return fmt.Sprintf("rate limiter cleanup done (expired=%d, active=%d)", entriesDeleted, totalEntries), nil
+}
+
+func cleanupBannedClients() (logMsg string, err error) {
+	deletedCount, totalCount, err := config.CleanupExpiredBans()
+	if err != nil {
+		return fmt.Sprintf("error cleaning up expired banned clients: %v", err), nil
+	}
+	return fmt.Sprintf("banned clients cleanup done (expired=%d, active=%d)", deletedCount, totalCount), nil
 }
 
 func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []string, err error) {

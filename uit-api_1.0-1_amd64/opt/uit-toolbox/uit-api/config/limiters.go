@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 	"uit-api/types"
 
@@ -28,6 +29,11 @@ type RateLimiter struct {
 	Type     string
 	Limiter  *rate.Limiter
 	LastSeen time.Time
+}
+
+type mapWithMutex struct {
+	mu *sync.RWMutex
+	m  map[netip.Addr]RateLimiter
 }
 
 func nextBanExpiry(now time.Time) time.Time {
@@ -257,30 +263,52 @@ func BlockIP(ip netip.Addr) {
 	}
 }
 
-func CleanupOldLimiterEntries() (entriesDeleted int64, err error) {
+func CleanupExpiredBans() (totalDeleted int64, totalEntries int64, err error) {
+	as, err := GetAppState()
+	if err != nil || as == nil {
+		return
+	}
+
+	now := time.Now()
+	as.bannedClientsMu.Lock()
+	defer as.bannedClientsMu.Unlock()
+	for ip, expiry := range as.bannedClients {
+		if !expiry.After(now) {
+			delete(as.bannedClients, ip)
+			atomic.AddInt64(&totalDeleted, 1)
+		}
+	}
+	totalEntries = int64(len(as.bannedClients))
+	return totalDeleted, totalEntries, nil
+}
+
+func CleanupOldLimiterEntries() (totalDeleted int64, totalEntries int64, err error) {
 	as, err := GetAppState()
 	if err != nil {
-		return entriesDeleted, types.CannotGetAppStateError
+		return totalDeleted, totalEntries, types.CannotGetAppStateError
 	}
 	now := time.Now()
+	var wg sync.WaitGroup
 
-	cleanupLimiterMap := func(mu *sync.RWMutex, m map[netip.Addr]RateLimiter) int64 {
-		var deleted int64
-		mu.Lock()
-		defer mu.Unlock()
-		for ip, limiter := range m {
-			if now.Sub(limiter.LastSeen) > limitersCleanupInterval {
-				delete(m, ip)
-				deleted++
-			}
-		}
-		return deleted
+	allMaps := []mapWithMutex{
+		{mu: &as.webServerLimiterMu, m: as.webServerLimiterMap},
+		{mu: &as.apiLimiterMu, m: as.apiLimiterMap},
+		{mu: &as.authLimiterMu, m: as.authLimiterMap},
+		{mu: &as.fileLimiterMu, m: as.fileLimiterMap},
 	}
-
-	entriesDeleted += cleanupLimiterMap(&as.webServerLimiterMu, as.webServerLimiterMap)
-	entriesDeleted += cleanupLimiterMap(&as.apiLimiterMu, as.apiLimiterMap)
-	entriesDeleted += cleanupLimiterMap(&as.authLimiterMu, as.authLimiterMap)
-	entriesDeleted += cleanupLimiterMap(&as.fileLimiterMu, as.fileLimiterMap)
-
-	return entriesDeleted, nil
+	for _, val := range allMaps {
+		wg.Go(func() {
+			val.mu.Lock()
+			defer val.mu.Unlock()
+			for ip, limiter := range val.m {
+				if now.Sub(limiter.LastSeen) > limitersCleanupInterval {
+					delete(val.m, ip)
+					atomic.AddInt64(&totalDeleted, 1)
+				}
+			}
+			tempEntries := int64(len(val.m))
+			atomic.AddInt64(&totalEntries, tempEntries)
+		})
+	}
+	return totalDeleted, totalEntries, nil
 }

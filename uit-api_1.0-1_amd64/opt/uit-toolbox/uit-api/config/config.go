@@ -996,6 +996,21 @@ func GetAllOnlineClientsData() (clientDataCopy map[int64]types.JobQueueRealtimeD
 	return clientDataCopy, nil
 }
 
+func (as *AppState) ClearLiveImageBytes() error {
+	now := time.Now()
+	as.ClientRealtimeDataMu.Lock()
+	defer as.ClientRealtimeDataMu.Unlock()
+	for tag, clientData := range as.ClientRealtimeData {
+		if len(clientData.LiveImageBytes) > 0 {
+			if clientData.LastHeard == nil || clientData.LastHeard.IsZero() || clientData.LastHeard.Add(types.LastHeardTimeout).Before(now) {
+				clientData.LiveImageBytes = nil
+				as.ClientRealtimeData[tag] = clientData
+			}
+		}
+	}
+	return nil
+}
+
 func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtimeData, err error) {
 	appState, err := GetAppState()
 	if err != nil || appState == nil {
