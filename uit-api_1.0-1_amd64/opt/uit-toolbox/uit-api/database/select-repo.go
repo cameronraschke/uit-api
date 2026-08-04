@@ -1343,7 +1343,9 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 			job_queue.client_uuid, 
 			job_queue.job_name,
 			ROW_NUMBER() OVER (
-				ORDER BY job_queue.job_queued_at ASC NULLS LAST
+				ORDER BY 
+					job_queue.job_queued_at ASC NULLS LAST, 
+					job_queue.client_uuid ASC NULLS LAST
 			) AS "position_in_queue"
 		FROM job_queue
 		WHERE
@@ -1947,7 +1949,9 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 				job_queue.client_uuid, 
 				job_queue.job_name,
 				ROW_NUMBER() OVER (
-					ORDER BY job_queue.job_queued_at ASC NULLS LAST
+					ORDER BY 
+						job_queue.job_queued_at ASC NULLS LAST, 
+						job_queue.client_uuid ASC NULLS LAST
 				) AS "position_in_queue"
 			FROM job_queue
 			WHERE
