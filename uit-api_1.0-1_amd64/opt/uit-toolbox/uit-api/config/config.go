@@ -730,10 +730,10 @@ func isClientOnline(clientData types.JobQueueRealtimeData) bool {
 	if clientData.LastHeard == nil || clientData.LastHeard.IsZero() {
 		return false
 	}
-	if clientData.LastHeard.Add(types.LastHeardTimeout).After(time.Now()) {
-		return true
+	if clientData.LastHeard.Add(types.LastHeardTimeout).Before(time.Now()) {
+		return false
 	}
-	return false
+	return true
 }
 
 func GetAllOnlineClients() (onlineClientTags []int64, err error) {
