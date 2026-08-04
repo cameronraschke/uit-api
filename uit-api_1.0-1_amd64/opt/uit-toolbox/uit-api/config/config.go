@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -20,7 +19,6 @@ import (
 	"uit-api/types"
 
 	"github.com/google/uuid"
-	"golang.org/x/time/rate"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -55,7 +53,7 @@ type AppConfiguration struct {
 	FileRequestTimeout   time.Duration  `json:"UIT_WEB_FILE_REQUEST_TIMEOUT"`
 	RateLimitBurst       int            `json:"UIT_WEB_RATE_LIMIT_BURST"`
 	RateLimitInterval    float64        `json:"UIT_WEB_RATE_LIMIT_INTERVAL"`
-	RateLimitBanDuration time.Duration  `json:"UIT_WEB_RATE_LIMIT_BAN_DURATION"`
+	RateLimitTimeout     time.Duration  `json:"UIT_WEB_RATE_LIMIT_BAN_DURATION"`
 	ClientDBUser         string         `json:"UIT_CLIENT_DB_USER"`
 	ClientDBPasswd       string         `json:"UIT_CLIENT_DB_PASSWD"`
 	ClientDBName         string         `json:"UIT_CLIENT_DB_NAME"`
@@ -115,66 +113,9 @@ type AppState struct {
 	userPermissions      sync.Map
 }
 
-const (
-	webServerRateLimitInterval = 25 // requests per second
-	webServerRateLimitBurst    = 75 // maximum burst size
-	apiRateLimitInterval       = 25 // requests per second
-	apiRateLimitBurst          = 75 // maximum burst size
-	authRateLimitInterval      = 10 // requests per second
-	authRateLimitBurst         = 20 // maximum burst size
-	fileRateLimitInterval      = 10 // requests per second
-	fileRateLimitBurst         = 30 // maximum burst size
-	defaultBanDuration         = 1 * time.Minute
-)
-
 var (
-	appStateInstance      atomic.Pointer[AppState]
-	rateLimitBanDuration  time.Duration
-	webServerRateLimiter  RateLimiter
-	apiRateLimiter        RateLimiter
-	authRateLimiter       RateLimiter
-	fileServerRateLimiter RateLimiter
+	appStateInstance atomic.Pointer[AppState]
 )
-
-type levelRangeHandler struct {
-	handler  slog.Handler
-	minLevel slog.Level
-	maxLevel slog.Level
-}
-
-func newLevelRangeHandler(handler slog.Handler, minLevel slog.Level, maxLevel slog.Level) slog.Handler {
-	return &levelRangeHandler{handler: handler, minLevel: minLevel, maxLevel: maxLevel}
-}
-
-func (handler *levelRangeHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	if level < handler.minLevel || level > handler.maxLevel {
-		return false
-	}
-	return handler.handler.Enabled(ctx, level)
-}
-
-func (handler *levelRangeHandler) Handle(ctx context.Context, record slog.Record) error {
-	if record.Level < handler.minLevel || record.Level > handler.maxLevel {
-		return nil
-	}
-	return handler.handler.Handle(ctx, record)
-}
-
-func (handler *levelRangeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &levelRangeHandler{
-		handler:  handler.handler.WithAttrs(attrs),
-		minLevel: handler.minLevel,
-		maxLevel: handler.maxLevel,
-	}
-}
-
-func (handler *levelRangeHandler) WithGroup(name string) slog.Handler {
-	return &levelRangeHandler{
-		handler:  handler.handler.WithGroup(name),
-		minLevel: handler.minLevel,
-		maxLevel: handler.maxLevel,
-	}
-}
 
 func InitConfig() (*AppConfiguration, error) {
 	var appConfig AppConfiguration
@@ -191,7 +132,7 @@ func InitConfig() (*AppConfiguration, error) {
 	// Convert durations to seconds
 	appConfig.APIRequestTimeout *= time.Second
 	appConfig.FileRequestTimeout *= time.Second
-	appConfig.RateLimitBanDuration *= time.Second
+	appConfig.RateLimitTimeout *= time.Second
 
 	// WAN interface, IP, and allowed IPs
 	ifaces, err := net.Interfaces()
@@ -294,96 +235,18 @@ func InitApp() (*AppState, error) {
 	appState.dbConn.Store(nil)
 	appState.pgxPool.Store(nil)
 
-	// Store rate limiters in app state
-	appState.webServerLimiterMu.Lock()
-	appState.webServerLimiterMap = make(map[netip.Addr]RateLimiter)
-	webServerRateLimiter = RateLimiter{
-		Type:     "web",
-		Limiter:  rate.NewLimiter(rate.Limit(webServerRateLimitInterval), webServerRateLimitBurst),
-		LastSeen: time.Time{},
+	// Initialize rate limiters
+	if err := appState.initRateLimiters(); err != nil {
+		return nil, fmt.Errorf("failed to initialize rate limiters: %w", err)
 	}
-	appState.webServerLimiterMu.Unlock()
-
-	appState.apiLimiterMu.Lock()
-	appState.apiLimiterMap = make(map[netip.Addr]RateLimiter)
-	apiRateLimiter = RateLimiter{
-		Type:     "api",
-		Limiter:  rate.NewLimiter(rate.Limit(apiRateLimitInterval), apiRateLimitBurst),
-		LastSeen: time.Time{},
+	// If ban duration not set, fallback to default
+	if appConfig.RateLimitTimeout <= 0 {
+		appConfig.RateLimitTimeout = defaultBanDuration
 	}
-	appState.apiLimiterMu.Unlock()
-
-	appState.authLimiterMu.Lock()
-	appState.authLimiterMap = make(map[netip.Addr]RateLimiter)
-	authRateLimiter = RateLimiter{
-		Type:     "auth",
-		Limiter:  rate.NewLimiter(rate.Limit(authRateLimitInterval), authRateLimitBurst),
-		LastSeen: time.Time{},
-	}
-	appState.authLimiterMu.Unlock()
-
-	appState.fileLimiterMu.Lock()
-	appState.fileLimiterMap = make(map[netip.Addr]RateLimiter)
-	fileServerRateLimiter = RateLimiter{
-		Type:     "file",
-		Limiter:  rate.NewLimiter(rate.Limit(fileRateLimitInterval), fileRateLimitBurst),
-		LastSeen: time.Time{},
-	}
-	appState.fileLimiterMu.Unlock()
-
-	appState.bannedClientsMu.Lock()
-	appState.bannedClients = make(map[netip.Addr]time.Time)
-	appState.bannedClientsMu.Unlock()
-
-	// Initialize ban duration
-	rateLimitBanDuration = appConfig.RateLimitBanDuration
-	if rateLimitBanDuration <= 0 {
-		rateLimitBanDuration = defaultBanDuration
-	}
-
 	// Initialize logger
-
-	// Set logger to nil initially
-	appState.appLogger.Store(nil)
-
-	removeTime := func(groups []string, a slog.Attr) slog.Attr {
-		if a.Key == slog.TimeKey && len(groups) == 0 {
-			return slog.Attr{}
-		}
-		return a
+	if err := appState.initLogger(); err != nil {
+		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
-
-	stdoutTextHandler := newLevelRangeHandler(
-		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level:       slog.LevelInfo,
-			ReplaceAttr: removeTime,
-		}),
-		slog.LevelInfo,
-		slog.LevelInfo,
-	)
-	stderrTextHandler := newLevelRangeHandler(
-		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level:       slog.LevelWarn,
-			ReplaceAttr: removeTime,
-		}),
-		slog.LevelWarn,
-		slog.LevelError,
-	)
-	// jsonLogFile, err := os.OpenFile("/var/log/uit-web/"+time.Now().Format("2006-01-02_15-04-05")+".json.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o0640)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to open JSON log file: %w", err)
-	// }
-	// jsonFileHandler := newLevelRangeHandler(
-	// 	slog.NewJSONHandler(jsonLogFile, &slog.HandlerOptions{Level: slog.LevelInfo}),
-	// 	slog.LevelInfo,
-	// 	slog.LevelError,
-	// )
-
-	// multiHandler := slog.NewMultiHandler(stdoutTextHandler, stderrTextHandler, jsonFileHandler)
-	multiHandler := slog.NewMultiHandler(stdoutTextHandler, stderrTextHandler)
-	logger := slog.New(multiHandler)
-	slog.SetDefault(logger)
-	appState.appLogger.Store(logger)
 
 	// Populate allowed IPs
 	for _, wanIP := range appConfig.AllowedWANIPs {
@@ -453,29 +316,6 @@ func GetAppState() (*AppState, error) {
 		return nil, fmt.Errorf("%w", types.NilAppStateError)
 	}
 	return appState, nil
-}
-
-// Logger access
-func GetLogger() *slog.Logger {
-	appState, err := GetAppState()
-	if err != nil {
-		fmt.Println("App state not initialized in GetLogger, using default logger")
-		newLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-		slog.SetDefault(newLogger)
-		return newLogger
-	}
-	if appState.appLogger == (atomic.Pointer[slog.Logger]{}) {
-		fmt.Println("Logger not initialized in GetLogger, using default logger")
-		newLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-		return newLogger
-	}
-	logger := appState.appLogger.Load()
-	if logger == nil {
-		fmt.Println("Logger is nil in GetLogger, using default logger")
-		return slog.New(slog.NewTextHandler(os.Stdout, nil))
-	}
-
-	return logger
 }
 
 // Database managment

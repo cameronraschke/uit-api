@@ -12,11 +12,20 @@ import (
 )
 
 const (
-	limitersCleanupInterval = 3 * time.Minute
+	limitersCleanupInterval    = 3 * time.Minute
+	webServerRateLimitInterval = 25 // requests per second
+	webServerRateLimitBurst    = 75 // maximum burst size
+	apiRateLimitInterval       = 25 // requests per second
+	apiRateLimitBurst          = 75 // maximum burst size
+	authRateLimitInterval      = 10 // requests per second
+	authRateLimitBurst         = 20 // maximum burst size
+	fileRateLimitInterval      = 10 // requests per second
+	fileRateLimitBurst         = 30 // maximum burst size
+	defaultBanDuration         = 1 * time.Minute
 )
 
 const (
-	InvalidLimiter = iota
+	InvalidLimiter LimiterType = iota
 	APILimiter
 	AuthLimiter
 	FileLimiter
@@ -36,8 +45,52 @@ type mapWithMutex struct {
 	m  map[netip.Addr]RateLimiter
 }
 
+func (as *AppState) initRateLimiters() error {
+	// Store rate limiters in app state
+	as.webServerLimiterMu.Lock()
+	as.webServerLimiterMap = make(map[netip.Addr]RateLimiter, 100)
+	webServerRateLimiter = RateLimiter{
+		Type:     "web",
+		Limiter:  rate.NewLimiter(rate.Limit(webServerRateLimitInterval), webServerRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	as.webServerLimiterMu.Unlock()
+
+	as.apiLimiterMu.Lock()
+	as.apiLimiterMap = make(map[netip.Addr]RateLimiter, 100)
+	apiRateLimiter = RateLimiter{
+		Type:     "api",
+		Limiter:  rate.NewLimiter(rate.Limit(apiRateLimitInterval), apiRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	as.apiLimiterMu.Unlock()
+
+	as.authLimiterMu.Lock()
+	as.authLimiterMap = make(map[netip.Addr]RateLimiter, 10)
+	authRateLimiter = RateLimiter{
+		Type:     "auth",
+		Limiter:  rate.NewLimiter(rate.Limit(authRateLimitInterval), authRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	as.authLimiterMu.Unlock()
+
+	as.fileLimiterMu.Lock()
+	as.fileLimiterMap = make(map[netip.Addr]RateLimiter, 10)
+	fileServerRateLimiter = RateLimiter{
+		Type:     "file",
+		Limiter:  rate.NewLimiter(rate.Limit(fileRateLimitInterval), fileRateLimitBurst),
+		LastSeen: time.Time{},
+	}
+	as.fileLimiterMu.Unlock()
+
+	as.bannedClientsMu.Lock()
+	as.bannedClients = make(map[netip.Addr]time.Time, 10)
+	as.bannedClientsMu.Unlock()
+	return nil
+}
+
 func nextBanExpiry(now time.Time) time.Time {
-	banDuration := rateLimitBanDuration
+	banDuration := rateLimitTimeout
 	if banDuration <= 0 {
 		banDuration = time.Minute // Default ban duration if not set
 	}
