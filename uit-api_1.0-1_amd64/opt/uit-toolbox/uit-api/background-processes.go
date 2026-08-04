@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	flushLogBufferInterval        = 5 * time.Second
 	authMapCleanupInterval        = 3 * time.Minute
 	bannedClientsCleanupInterval  = 5 * time.Minute
 	liveScreenshotCleanupInterval = 30 * time.Minute
@@ -204,6 +205,26 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			},
 			OnErr: func(err error) error {
 				log.Error(fmt.Sprintf("Error during offline clients cleanup: %v", err))
+				return err
+			},
+		})
+	})
+
+	// Start log buffer flush goroutine
+	errGroup.Go(func() error {
+		return runBackgroundProcess(backgroundProcessConfig{
+			ErrCtx:   errCtx,
+			LogChan:  logChan,
+			Interval: flushLogBufferInterval,
+			StopMsg:  "Log buffer flush goroutine stopping...",
+			Run: func(context.Context) (logMsg []string, err error) {
+				if err := config.FlushLogBuffers(); err != nil {
+					logMsg = append(logMsg, fmt.Sprintf("error flushing log buffers: %v", err))
+				}
+				return logMsg, err
+			},
+			OnErr: func(err error) error {
+				log.Error(fmt.Sprintf("Error during log buffer flush: %v", err))
 				return err
 			},
 		})

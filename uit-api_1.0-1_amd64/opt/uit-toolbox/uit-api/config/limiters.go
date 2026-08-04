@@ -32,6 +32,14 @@ const (
 	WebLimiter
 )
 
+var (
+	rateLimitTimeout      time.Duration
+	webServerRateLimiter  RateLimiter
+	apiRateLimiter        RateLimiter
+	authRateLimiter       RateLimiter
+	fileServerRateLimiter RateLimiter
+)
+
 type LimiterType int
 
 type RateLimiter struct {

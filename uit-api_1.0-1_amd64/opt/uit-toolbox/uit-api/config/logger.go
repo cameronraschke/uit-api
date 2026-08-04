@@ -1,104 +1,16 @@
 package config
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
-	"sync/atomic"
-	"time"
 )
 
 type logLevelRangeHandler struct {
 	handler  slog.Handler
 	minLevel slog.Level
 	maxLevel slog.Level
-}
-
-type LogBuffer struct {
-	LogType  LogBufferType
-	LogChan  chan string
-	Buffer   *bytes.Buffer
-	Capacity int
-}
-
-type LogBufferType int
-
-const (
-	StdoutBufferType LogBufferType = iota
-	StderrBufferType
-)
-
-const (
-	logBufferSize = 1024 // 1KB
-)
-
-var (
-	StdoutBuffer atomic.Pointer[LogBuffer]
-	StderrBuffer atomic.Pointer[LogBuffer]
-)
-
-var (
-	rateLimitTimeout      time.Duration
-	webServerRateLimiter  RateLimiter
-	apiRateLimiter        RateLimiter
-	authRateLimiter       RateLimiter
-	fileServerRateLimiter RateLimiter
-)
-
-func (lb *LogBuffer) Write(p []byte) (n int, err error) {
-	if lb.Buffer.Len()+len(p) > lb.Capacity {
-		// Truncate the buffer to make space for new data
-		lb.Buffer.Truncate(lb.Capacity - len(p))
-	}
-
-	return lb.Buffer.Write(p)
-}
-
-func (lb *LogBuffer) Read(p []byte) (n int, err error) {
-	return lb.Buffer.Read(p)
-}
-
-func LogToBuffer(msg string) {
-	StdoutBufferPtr := StdoutBuffer.Load()
-
-	if StdoutBufferPtr != nil {
-		StdoutBufferPtr.Buffer.WriteString(msg)
-		StdoutBufferPtr.Buffer.WriteString("\n")
-		if StdoutBufferPtr.Buffer.Len() > StdoutBufferPtr.Capacity {
-			StdoutBufferPtr.Buffer.Truncate(StdoutBufferPtr.Capacity)
-		}
-	}
-}
-
-func processLogBuffer(logBuffer *LogBuffer) {
-	if logBuffer == nil {
-		return
-	}
-
-	log := GetLogger()
-
-	for logBuffer.Buffer.Len() > 0 {
-		line, err := logBuffer.Buffer.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Error("Error reading from log buffer: " + err.Error())
-			break
-		}
-		line = line[:len(line)-1] // Remove the newline character
-		switch logBuffer.LogType {
-		case StdoutBufferType:
-			log.Info(line)
-		case StderrBufferType:
-			log.Error(line)
-		default:
-			log.Warn("Unknown log buffer type")
-		}
-	}
 }
 
 func newLevelRangeHandler(handler slog.Handler, minLevel slog.Level, maxLevel slog.Level) slog.Handler {
@@ -149,25 +61,12 @@ func (as *AppState) initLogger() error {
 		return a
 	}
 
-	StdoutBuffer.Store(&LogBuffer{
-		LogType:  StdoutBufferType,
-		Buffer:   &bytes.Buffer{},
-		Capacity: logBufferSize,
-	})
-	StderrBuffer.Store(&LogBuffer{
-		LogType:  StderrBufferType,
-		Buffer:   &bytes.Buffer{},
-		Capacity: logBufferSize,
-	})
-
-	StdoutBuffer.Load().Buffer.Reset()
-	StderrBuffer.Load().Buffer.Reset()
-
-	StdoutBuffer.Load().Buffer.Grow(logBufferSize)
-	StderrBuffer.Load().Buffer.Grow(logBufferSize)
+	if err := initLogBuffers(); err != nil {
+		return fmt.Errorf("failed to initialize log buffers: %w", err)
+	}
 
 	stdoutTextHandler := newLevelRangeHandler(
-		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		slog.NewTextHandler(StdoutBuffer.Load(), &slog.HandlerOptions{
 			Level:       slog.LevelInfo,
 			ReplaceAttr: removeTime,
 		}),
@@ -175,7 +74,7 @@ func (as *AppState) initLogger() error {
 		slog.LevelInfo,
 	)
 	stderrTextHandler := newLevelRangeHandler(
-		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		slog.NewTextHandler(StderrBuffer.Load(), &slog.HandlerOptions{
 			Level:       slog.LevelWarn,
 			ReplaceAttr: removeTime,
 		}),
@@ -229,13 +128,15 @@ func GetLogger() *slog.Logger {
 		fmt.Fprintf(os.Stderr, "[ERROR] unable to get AppState in func GetLogger, returning default logger: %v\n", err)
 		newLogger := newDefaultLogger()
 		slog.SetDefault(newLogger)
-		as.appLogger.Store(newLogger)
-		return nil
+		return newLogger
 	}
 	logger := as.appLogger.Load()
 	if logger == nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] logger is nil in GetLogger, using default logger")
-		return slog.New(slog.NewTextHandler(os.Stdout, nil))
+		newLogger := newDefaultLogger()
+		as.appLogger.Store(newLogger)
+		slog.SetDefault(newLogger)
+		return newLogger
 	}
 
 	return logger
