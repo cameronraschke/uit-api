@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	flushLogBufferInterval        = 5 * time.Second
+	flushLogBufferInterval        = 3 * time.Second
 	authMapCleanupInterval        = 3 * time.Minute
 	bannedClientsCleanupInterval  = 5 * time.Minute
 	liveScreenshotCleanupInterval = 30 * time.Minute
