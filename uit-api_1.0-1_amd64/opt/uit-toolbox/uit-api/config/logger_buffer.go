@@ -18,7 +18,7 @@ type LogBuffer struct {
 
 func newLogBuffer(output io.Writer, capacity int) *LogBuffer {
 	if capacity <= 0 {
-		capacity = 64 * 1024
+		capacity = 64 * 1024 // Default to 64KB if capacity is not specified
 	}
 	return &LogBuffer{
 		Mu:       sync.RWMutex{},
@@ -29,7 +29,7 @@ func newLogBuffer(output io.Writer, capacity int) *LogBuffer {
 }
 
 func (lb *LogBuffer) Write(p []byte) (n int, err error) {
-	if lb == nil || lb.Buffer == nil {
+	if lb == nil || lb.Buffer == nil || lb.Buffer.Len() == 0 {
 		return 0, fmt.Errorf("log buffer is nil")
 	}
 	if lb.Capacity <= 0 {
@@ -55,7 +55,7 @@ func (lb *LogBuffer) Write(p []byte) (n int, err error) {
 }
 
 func (lb *LogBuffer) Read(p []byte) (n int, err error) {
-	if lb == nil || lb.Buffer == nil {
+	if lb == nil || lb.Buffer == nil || lb.Buffer.Len() == 0 {
 		return 0, fmt.Errorf("log buffer is nil")
 	}
 	lb.Mu.Lock()
@@ -64,7 +64,7 @@ func (lb *LogBuffer) Read(p []byte) (n int, err error) {
 }
 
 func (lb *LogBuffer) String() string {
-	if lb == nil || lb.Buffer == nil {
+	if lb == nil || lb.Buffer == nil || lb.Buffer.Len() == 0 {
 		return ""
 	}
 	lb.Mu.RLock()
@@ -73,7 +73,7 @@ func (lb *LogBuffer) String() string {
 }
 
 func (lb *LogBuffer) Clear() {
-	if lb == nil || lb.Buffer == nil {
+	if lb == nil || lb.Buffer == nil || lb.Buffer.Len() == 0 {
 		return
 	}
 	lb.Mu.Lock()
@@ -82,7 +82,7 @@ func (lb *LogBuffer) Clear() {
 }
 
 func (lb *LogBuffer) Flush() error {
-	if lb == nil || lb.Buffer == nil {
+	if lb == nil || lb.Buffer == nil || lb.Buffer.Len() == 0 {
 		return fmt.Errorf("log buffer is nil")
 	}
 	if lb.Output == nil {
@@ -121,13 +121,16 @@ func (logBuffer *LogBuffer) addLogToBuffer(msg string) {
 }
 
 func FlushLogBuffers() error {
-	if StdoutBuffer.Load() != nil {
-		if err := StdoutBuffer.Load().Flush(); err != nil {
+	stdoutBuffer := StdoutBuffer.Load()
+	if stdoutBuffer != nil {
+		if err := stdoutBuffer.Flush(); err != nil {
 			return fmt.Errorf("failed to flush stdout log buffer: %w", err)
 		}
 	}
-	if StderrBuffer.Load() != nil {
-		if err := StderrBuffer.Load().Flush(); err != nil {
+
+	stderrBuffer := StderrBuffer.Load()
+	if stderrBuffer != nil {
+		if err := stderrBuffer.Flush(); err != nil {
 			return fmt.Errorf("failed to flush stderr log buffer: %w", err)
 		}
 	}
@@ -135,7 +138,7 @@ func FlushLogBuffers() error {
 }
 
 func initLogBuffers() error {
-	StdoutBuffer.Store(newLogBuffer(os.Stdout, 64*1024))
-	StderrBuffer.Store(newLogBuffer(os.Stderr, 64*1024))
+	StdoutBuffer.Store(newLogBuffer(os.Stdout, 64*1024)) // 64KB buffer for stdout
+	StderrBuffer.Store(newLogBuffer(os.Stderr, 64*1024)) // 64KB buffer for stderr
 	return nil
 }
