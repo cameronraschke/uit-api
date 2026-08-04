@@ -175,12 +175,13 @@ func StartWebServer(ctx context.Context) error {
 
 	log.Info("Starting HTTPS web server...")
 
-	apiTimeout, err := config.GetRequestTimeout("api")
+	as, err := config.GetAppState()
 	if err != nil {
-		return fmt.Errorf("cannot get API request timeout for HTTPS server: %w", err)
+		return fmt.Errorf("failed to retrieve app state: %w", err)
 	}
+	apiTimeout := time.Duration(as.APIRequestTimeout.Load())
 	if apiTimeout <= 0 {
-		return fmt.Errorf("invalid API request timeout configured for HTTPS server: %s", apiTimeout)
+		return fmt.Errorf("invalid API timeout value: %d", apiTimeout)
 	}
 
 	tlsConfig := &tls.Config{

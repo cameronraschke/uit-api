@@ -104,8 +104,8 @@ type AppState struct {
 	allowedLANIPs        sync.Map
 	allAllowedIPs        sync.Map
 	sessionSecret        []byte
-	apiRequestTimeout    atomic.Int64
-	fileRequestTimeout   atomic.Int64
+	APIRequestTimeout    atomic.Int64
+	FileRequestTimeout   atomic.Int64
 	webEndpoints         sync.Map
 	ClientRealtimeDataMu sync.RWMutex
 	ClientRealtimeData   map[int64]types.JobQueueRealtimeData
@@ -288,8 +288,8 @@ func InitApp() (*AppState, error) {
 	}
 
 	// Set initial timeouts
-	appState.apiRequestTimeout.Store(int64(appConfig.APIRequestTimeout))
-	appState.fileRequestTimeout.Store(int64(appConfig.FileRequestTimeout))
+	appState.APIRequestTimeout.Store(int64(appConfig.APIRequestTimeout))
+	appState.FileRequestTimeout.Store(int64(appConfig.FileRequestTimeout))
 
 	// Init AuthMap
 	appState.authMap = make(map[string]types.AuthSession)
@@ -572,49 +572,6 @@ func GetTLSCertFiles() (certFile string, keyFile string, err error) {
 		return "", "", fmt.Errorf("%w: app config is not loaded in GetTLSCertFiles", types.CannotGetAppStateError)
 	}
 	return appConfig.WebTLSCertFile, appConfig.WebTLSKeyFile, nil
-}
-
-func GetRequestTimeout(timeoutType string) (time.Duration, error) {
-	appState, err := GetAppState()
-	if err != nil {
-		return 0, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	switch strings.ToLower(timeoutType) {
-	case "api":
-		apiTimeout := appState.apiRequestTimeout.Load()
-		if apiTimeout == 0 {
-			return 0, fmt.Errorf("%w: cannot get API request timeout in GetRequestTimeout", types.CannotGetAppStateError)
-		}
-		return time.Duration(apiTimeout), nil
-	case "file":
-		fileTimeout := appState.fileRequestTimeout.Load()
-		if fileTimeout == 0 {
-			return 0, fmt.Errorf("%w: cannot get file request timeout in GetRequestTimeout", types.CannotGetAppStateError)
-		}
-		return time.Duration(fileTimeout), nil
-	default:
-		return 0, fmt.Errorf("invalid timeout type: %s", timeoutType)
-	}
-}
-
-func SetRequestTimeout(timeoutType string, timeout time.Duration) error {
-	appState, err := GetAppState()
-	if err != nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	if timeout <= 0 {
-		return fmt.Errorf("invalid timeout value in SetRequestTimeout: %.2f", timeout.Seconds())
-	}
-	switch strings.TrimSpace(strings.ToLower(timeoutType)) {
-	case "api":
-		appState.apiRequestTimeout.Store(int64(timeout))
-		return nil
-	case "file":
-		appState.fileRequestTimeout.Store(int64(timeout))
-		return nil
-	default:
-		return fmt.Errorf("invalid timeout type: %s", timeoutType)
-	}
 }
 
 func GetAllowedLANIPs() ([]netip.Prefix, error) {

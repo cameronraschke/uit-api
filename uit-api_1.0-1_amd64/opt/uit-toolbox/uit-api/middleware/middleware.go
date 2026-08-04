@@ -309,12 +309,15 @@ func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 func APITimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "APITimeoutMiddleware"))
-		apiTimeout, err := config.GetRequestTimeout("api")
+		as, err := config.GetAppState()
 		if err != nil {
-			log.Error("Failed to get API timeout from config: " + err.Error())
+			log.Error("Failed to retrieve app state: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
+
+		apiTimeout := time.Duration(as.APIRequestTimeout.Load())
+
 		ctx, cancel := context.WithTimeout(req.Context(), apiTimeout)
 		defer cancel()
 		next.ServeHTTP(w, req.WithContext(ctx))
@@ -324,12 +327,15 @@ func APITimeoutMiddleware(next http.Handler) http.Handler {
 func FileServerTimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "FileServerTimeoutMiddleware"))
-		fileTimeout, err := config.GetRequestTimeout("file")
+		as, err := config.GetAppState()
 		if err != nil {
-			log.Error("Failed to get file server timeout from config: " + err.Error())
+			log.Error("Failed to retrieve app state: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
+
+		fileTimeout := time.Duration(as.FileRequestTimeout.Load())
+
 		ctx, cancel := context.WithTimeout(req.Context(), fileTimeout)
 		defer cancel()
 		next.ServeHTTP(w, req.WithContext(ctx))
