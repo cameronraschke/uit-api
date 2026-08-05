@@ -2722,12 +2722,12 @@ func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData
 		var jobData types.JobQueueRealtimeData
 		if err := rows.Scan(
 			&jobData.ClientUUID,
-			&jobData.Tagnumber,
-			&jobData.SerialNumber,
-			&jobData.LastHeard,
-			&jobData.LastHeardUpdatedInDB,
-			&jobData.SystemUptime,
-			&jobData.AppUptime,
+			toNullInt64(jobData.Tagnumber),
+			toNullString(jobData.SerialNumber),
+			ptrToNullTime(jobData.LastHeard),
+			jobData.LastHeardUpdatedInDB,
+			toNullDuration(jobData.SystemUptime),
+			toNullDuration(jobData.AppUptime),
 		); err != nil {
 			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
 		}
