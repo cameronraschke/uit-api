@@ -264,6 +264,11 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []st
 			continue
 		}
 
+		if data.LastHeardUpdatedInDB {
+			// logMsg = append(logMsg, fmt.Sprintf("Skipping tag %d: last_heard already updated in DB", tag))
+			continue
+		}
+
 		attempted++
 		updateCtx, updateCancel := context.WithTimeout(backgroundCtx, 3*time.Second)
 		if err := database.UpdateClientLastHeard(updateCtx, tag, data.LastHeard); err != nil {
