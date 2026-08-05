@@ -19,7 +19,7 @@ const (
 	bannedClientsCleanupInterval  = 5 * time.Minute
 	liveScreenshotCleanupInterval = 30 * time.Minute
 	rateLimiterCleanupInterval    = 5 * time.Minute
-	writeLastHeardInterval        = 30 * time.Minute
+	writeLastHeardInterval        = 1 * time.Minute
 )
 
 func logMessage(ctx context.Context, logChan chan<- string, msg string) bool {
