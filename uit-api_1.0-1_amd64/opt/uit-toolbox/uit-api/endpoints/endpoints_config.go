@@ -1,50 +1,20 @@
-package config
+package endpoints
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"uit-api/config"
 	"uit-api/types"
 )
 
-type WebEndpointConfig struct {
-	FilePath        string   `json:"file_path"`
-	AllowedMethods  []string `json:"allowed_methods"`
-	TLSRequired     *bool    `json:"tls_required"`
-	AuthRequired    *bool    `json:"auth_required"`
-	Requires        []string `json:"requires"`
-	ACLUsers        []string `json:"acl_users"`
-	ACLGroups       []string `json:"acl_groups"`
-	HTTPVersion     string   `json:"http_version"`
-	EndpointType    string   `json:"endpoint_type"`
-	ContentType     string   `json:"content_type"`
-	StatusCode      int      `json:"status_code"`
-	Redirect        *bool    `json:"redirect"`
-	RedirectURL     string   `json:"redirect_url"`
-	MaxUploadSize   *int64   `json:"max_upload_size"`
-	MaxDownloadSize *int64   `json:"max_download_size"`
-}
-
-func (as *AppState) GetFormConstraints() (*types.HTMLFormConstraints, error) {
-	if as == nil {
-		return nil, fmt.Errorf("nil AppState (GetFormConstraints)")
+func InitEndpointConfig() error {
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		return fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	return as.appConfig.Load().FormConstraints.Load(), nil
-}
-
-func (as *AppState) GetFileUploadConstraints() (*types.FileUploadConstraints, error) {
-	if as == nil {
-		return nil, fmt.Errorf("nil AppState (GetFileUploadConstraints)")
-	}
-	return as.appConfig.Load().FileConstraints.Load(), nil
-}
-
-func InitWebEndpoints(as *AppState) error {
-	if as == nil {
-		return fmt.Errorf("app state is nil in InitWebEndpoints")
-	}
-	endpointConfigMap := make(map[string]WebEndpointConfig)
+	endpointConfigMap := make(map[string]types.WebEndpointConfig)
 	configDir := "/etc/uit-toolbox/endpoints/"
 	configDirMetadata, err := os.Stat(configDir)
 	if err != nil || !configDirMetadata.IsDir() {
@@ -63,13 +33,13 @@ func InitWebEndpoints(as *AppState) error {
 			return fmt.Errorf("failed to read web endpoints config file %s: %w", file.Name(), err)
 		}
 
-		endpoints := make(map[string]WebEndpointConfig)
+		endpoints := make(map[string]types.WebEndpointConfig)
 		if err := json.Unmarshal(endpointConfigFiles, &endpoints); err != nil {
 			return fmt.Errorf("failed to unmarshal web endpoints config JSON: %w", err)
 		}
 
 		for endpointPath, endpointData := range endpoints {
-			merged := WebEndpointConfig{
+			merged := types.WebEndpointConfig{
 				FilePath:        endpointData.FilePath,
 				AllowedMethods:  endpointData.AllowedMethods,
 				TLSRequired:     endpointData.TLSRequired,
@@ -122,11 +92,11 @@ func InitWebEndpoints(as *AppState) error {
 				switch endpointPath {
 				case "/api/overview/note":
 					merged.MaxUploadSize = new(int64)
-					*merged.MaxUploadSize += as.appConfig.Load().FormConstraints.Load().GeneralNote.MaxFormBytes
+					*merged.MaxUploadSize += ac.FormConstraints.Load().GeneralNote.MaxFormBytes
 				case "/api/inventory/update_client_data", "/api/client/files/upload":
-					maxOverallJSONSize := as.appConfig.Load().FormConstraints.Load().InventoryForm.MaxJSONBytes
-					maxOverallImageSize := as.appConfig.Load().FileConstraints.Load().ImageConstraints.MaxFileSize * int64(as.appConfig.Load().FileConstraints.Load().ImageConstraints.MaxFileCount)
-					maxOverallVideoSize := as.appConfig.Load().FileConstraints.Load().VideoConstraints.MaxFileSize * int64(as.appConfig.Load().FileConstraints.Load().VideoConstraints.MaxFileCount)
+					maxOverallJSONSize := ac.FormConstraints.Load().InventoryForm.MaxJSONBytes
+					maxOverallImageSize := ac.FileConstraints.Load().ImageConstraints.MaxFileSize * int64(ac.FileConstraints.Load().ImageConstraints.MaxFileCount)
+					maxOverallVideoSize := ac.FileConstraints.Load().VideoConstraints.MaxFileSize * int64(ac.FileConstraints.Load().VideoConstraints.MaxFileCount)
 					merged.MaxUploadSize = new(int64)
 					*merged.MaxUploadSize += maxOverallJSONSize + maxOverallImageSize + maxOverallVideoSize
 				default:
@@ -135,22 +105,22 @@ func InitWebEndpoints(as *AppState) error {
 				}
 			}
 			endpointConfigMap[endpointPath] = merged
-			as.webEndpoints.Store(endpointPath, &merged)
+			ac.WebEndpoints.Store(endpointPath, &merged)
 		}
 	}
 	return nil
 }
 
-func GetWebEndpointConfig(endpointPath string) (*WebEndpointConfig, error) {
-	appState, err := GetAppState()
+func GetWebEndpointConfig(endpointPath string) (*types.WebEndpointConfig, error) {
+	ac, err := config.GetAppConfig()
 	if err != nil {
-		return nil, fmt.Errorf("error getting app state in GetWebEndpointConfig: %w", err)
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	value, ok := appState.webEndpoints.Load(endpointPath)
+	value, ok := ac.WebEndpoints.Load(endpointPath)
 	if !ok {
 		return nil, fmt.Errorf("endpoint not found in config: %s", endpointPath)
 	}
-	endpointData, ok := value.(*WebEndpointConfig)
+	endpointData, ok := value.(*types.WebEndpointConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid/missing endpoint data for: %s", endpointPath)
 	}
@@ -160,7 +130,23 @@ func GetWebEndpointConfig(endpointPath string) (*WebEndpointConfig, error) {
 	return endpointData, nil // return a copy
 }
 
-func GetWebEndpointFilePath(webEndpoint *WebEndpointConfig) (string, error) {
+func GetFormConstraints() (*types.HTMLFormConstraints, error) {
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
+	}
+	return ac.FormConstraints.Load(), nil
+}
+
+func GetFileUploadConstraints() (*types.FileUploadConstraints, error) {
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
+	}
+	return ac.FileConstraints.Load(), nil
+}
+
+func GetWebEndpointFilePath(webEndpoint *types.WebEndpointConfig) (string, error) {
 	if webEndpoint == nil {
 		return "", fmt.Errorf("web endpoint config is nil in GetWebEndpointFilePath")
 	}
@@ -170,17 +156,17 @@ func GetWebEndpointFilePath(webEndpoint *WebEndpointConfig) (string, error) {
 	return webEndpoint.FilePath, nil
 }
 
-func IsWebEndpointAuthRequired(webEndpoint *WebEndpointConfig) (bool, error) {
+func IsWebEndpointAuthRequired(webEndpoint *types.WebEndpointConfig) (bool, error) {
 	if webEndpoint == nil {
 		return false, fmt.Errorf("web endpoint config is nil in IsWebEndpointAuthRequired")
 	}
-	if webEndpoint.TLSRequired == nil {
+	if webEndpoint.AuthRequired == nil {
 		return false, fmt.Errorf("auth required field is nil for endpoint")
 	}
 	return *webEndpoint.AuthRequired, nil
 }
 
-func IsWebEndpointHTTPSRequired(webEndpoint *WebEndpointConfig) (bool, error) {
+func IsWebEndpointHTTPSRequired(webEndpoint *types.WebEndpointConfig) (bool, error) {
 	if webEndpoint == nil {
 		return false, fmt.Errorf("web endpoint config is nil in IsWebEndpointHTTPSRequired")
 	}
@@ -190,7 +176,7 @@ func IsWebEndpointHTTPSRequired(webEndpoint *WebEndpointConfig) (bool, error) {
 	return *webEndpoint.TLSRequired, nil
 }
 
-func GetWebEndpointAllowedMethods(webEndpoint *WebEndpointConfig) ([]string, error) {
+func GetWebEndpointAllowedMethods(webEndpoint *types.WebEndpointConfig) ([]string, error) {
 	if webEndpoint == nil {
 		return nil, fmt.Errorf("web endpoint config is nil in GetWebEndpointAllowedMethods")
 	}
@@ -200,7 +186,7 @@ func GetWebEndpointAllowedMethods(webEndpoint *WebEndpointConfig) ([]string, err
 	return webEndpoint.AllowedMethods, nil
 }
 
-func GetWebEndpointContentType(webEndpoint *WebEndpointConfig) (string, error) {
+func GetWebEndpointContentType(webEndpoint *types.WebEndpointConfig) (string, error) {
 	if webEndpoint == nil {
 		return "", fmt.Errorf("web endpoint config is nil in GetWebEndpointContentType")
 	}
@@ -210,7 +196,7 @@ func GetWebEndpointContentType(webEndpoint *WebEndpointConfig) (string, error) {
 	return webEndpoint.ContentType, nil
 }
 
-func GetWebEndpointType(webEndpoint *WebEndpointConfig) (string, error) {
+func GetWebEndpointType(webEndpoint *types.WebEndpointConfig) (string, error) {
 	if webEndpoint == nil {
 		return "", fmt.Errorf("web endpoint config is nil in GetWebEndpointType")
 	}
@@ -220,7 +206,7 @@ func GetWebEndpointType(webEndpoint *WebEndpointConfig) (string, error) {
 	return webEndpoint.EndpointType, nil
 }
 
-func GetWebEndpointRedirectURL(webEndpoint *WebEndpointConfig) (string, error) {
+func GetWebEndpointRedirectURL(webEndpoint *types.WebEndpointConfig) (string, error) {
 	if webEndpoint == nil {
 		return "", fmt.Errorf("web endpoint config is nil in GetWebEndpointRedirectURL")
 	}

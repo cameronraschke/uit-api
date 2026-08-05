@@ -1,6 +1,10 @@
 package types
 
-import "time"
+import (
+	"time"
+
+	"golang.org/x/time/rate"
+)
 
 type GeneralNoteResponse struct {
 	Time        *time.Time `json:"time"`
@@ -10,4 +14,10 @@ type GeneralNoteResponse struct {
 	Projects    *string    `json:"projects"`
 	Misc        *string    `json:"misc"`
 	Bugs        *string    `json:"bugs"`
+}
+
+type RateLimiter struct {
+	Type     string
+	Limiter  *rate.Limiter
+	LastSeen time.Time
 }

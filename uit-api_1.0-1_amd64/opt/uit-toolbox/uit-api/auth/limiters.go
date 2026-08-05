@@ -1,11 +1,13 @@
-package config
+package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
+	"uit-api/appstate"
 	"uit-api/types"
 
 	"golang.org/x/time/rate"
@@ -24,6 +26,13 @@ const (
 	defaultBanDuration         = 1 * time.Minute
 )
 
+type rateLimiterMap struct {
+	mu *sync.RWMutex
+	m  map[netip.Addr]types.RateLimiter
+}
+
+type LimiterType int
+
 const (
 	InvalidLimiter LimiterType = iota
 	APILimiter
@@ -33,75 +42,87 @@ const (
 )
 
 var (
-	rateLimitTimeout      time.Duration
-	webServerRateLimiter  RateLimiter
-	apiRateLimiter        RateLimiter
-	authRateLimiter       RateLimiter
-	fileServerRateLimiter RateLimiter
+	rateLimiterInstance   atomic.Pointer[types.RequestLimiters]
+	webServerRateLimiter  types.RateLimiter
+	apiRateLimiter        types.RateLimiter
+	authRateLimiter       types.RateLimiter
+	fileServerRateLimiter types.RateLimiter
 )
 
-type LimiterType int
+func InitRateLimiters() error {
+	limiter := new(types.RequestLimiters)
 
-type RateLimiter struct {
-	Type     string
-	Limiter  *rate.Limiter
-	LastSeen time.Time
-}
+	// Init maps and mutexes for each limiter type
+	limiter.APILimiterMap = make(map[netip.Addr]types.RateLimiter, 100)
+	limiter.AuthLimiterMap = make(map[netip.Addr]types.RateLimiter, 100)
+	limiter.FileLimiterMap = make(map[netip.Addr]types.RateLimiter, 100)
+	limiter.WebServerLimiterMap = make(map[netip.Addr]types.RateLimiter, 100)
+	limiter.WebServerLimiterMu = sync.RWMutex{}
+	limiter.APILimiterMu = sync.RWMutex{}
+	limiter.AuthLimiterMu = sync.RWMutex{}
+	limiter.FileLimiterMu = sync.RWMutex{}
 
-type mapWithMutex struct {
-	mu *sync.RWMutex
-	m  map[netip.Addr]RateLimiter
-}
+	limiter.BannedClients = make(map[netip.Addr]time.Time, 100)
+	limiter.BannedClientsMu = sync.RWMutex{}
 
-func (as *AppState) initRateLimiters() error {
-	// Store rate limiters in app state
-	as.webServerLimiterMu.Lock()
-	as.webServerLimiterMap = make(map[netip.Addr]RateLimiter, 100)
-	webServerRateLimiter = RateLimiter{
+	// Default web server rate limiter
+	webServerRateLimiter = types.RateLimiter{
 		Type:     "web",
 		Limiter:  rate.NewLimiter(rate.Limit(webServerRateLimitInterval), webServerRateLimitBurst),
 		LastSeen: time.Time{},
 	}
-	as.webServerLimiterMu.Unlock()
 
-	as.apiLimiterMu.Lock()
-	as.apiLimiterMap = make(map[netip.Addr]RateLimiter, 100)
-	apiRateLimiter = RateLimiter{
+	// Default API rate limiter
+	apiRateLimiter = types.RateLimiter{
 		Type:     "api",
 		Limiter:  rate.NewLimiter(rate.Limit(apiRateLimitInterval), apiRateLimitBurst),
 		LastSeen: time.Time{},
 	}
-	as.apiLimiterMu.Unlock()
 
-	as.authLimiterMu.Lock()
-	as.authLimiterMap = make(map[netip.Addr]RateLimiter, 10)
-	authRateLimiter = RateLimiter{
+	// Default auth rate limiter
+	authRateLimiter = types.RateLimiter{
 		Type:     "auth",
 		Limiter:  rate.NewLimiter(rate.Limit(authRateLimitInterval), authRateLimitBurst),
 		LastSeen: time.Time{},
 	}
-	as.authLimiterMu.Unlock()
-
-	as.fileLimiterMu.Lock()
-	as.fileLimiterMap = make(map[netip.Addr]RateLimiter, 10)
-	fileServerRateLimiter = RateLimiter{
+	// Default file server rate limiter
+	fileServerRateLimiter = types.RateLimiter{
 		Type:     "file",
 		Limiter:  rate.NewLimiter(rate.Limit(fileRateLimitInterval), fileRateLimitBurst),
 		LastSeen: time.Time{},
 	}
-	as.fileLimiterMu.Unlock()
 
-	as.bannedClientsMu.Lock()
-	as.bannedClients = make(map[netip.Addr]time.Time, 10)
-	as.bannedClientsMu.Unlock()
+	rateLimiterInstance.Store(limiter)
 	return nil
 }
 
-func nextBanExpiry(now time.Time) time.Time {
-	banDuration := rateLimitTimeout
-	if banDuration <= 0 {
-		banDuration = time.Minute // Default ban duration if not set
+func GetRateLimiters() (*types.RequestLimiters, error) {
+	rateLimiters := rateLimiterInstance.Load()
+	if rateLimiters == nil {
+		return nil, fmt.Errorf("%w", types.NilRateLimitersError)
 	}
+	return rateLimiters, nil
+}
+
+func CleanupBlockedIPs() {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil {
+		return
+	}
+
+	lm.BannedClientsMu.Lock()
+	defer lm.BannedClientsMu.Unlock()
+
+	now := time.Now()
+	for ip, bannedUntil := range lm.BannedClients {
+		if now.After(bannedUntil) {
+			delete(lm.BannedClients, ip)
+		}
+	}
+}
+
+func nextBanExpiry(now time.Time) time.Time {
+	banDuration := types.RateLimitTimeout
 	return now.Add(banDuration)
 }
 
@@ -121,7 +142,7 @@ func (lt LimiterType) newLimiter() *rate.Limiter {
 }
 
 func (lt LimiterType) GetRateLimiterForIP(ipAddr netip.Addr) *rate.Limiter {
-	as, err := GetAppState()
+	as, err := appstate.GetAppState()
 	if err != nil || as == nil {
 		return nil
 	}
@@ -157,20 +178,20 @@ func ToLimiterType(ls string) (lt LimiterType) {
 	}
 }
 
-func (lt LimiterType) GetAssociatedMap() (map[netip.Addr]RateLimiter, *sync.RWMutex) {
-	as, err := GetAppState()
-	if err != nil || as == nil {
+func (lt LimiterType) GetAssociatedMap() (map[netip.Addr]types.RateLimiter, *sync.RWMutex) {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil {
 		return nil, nil
 	}
 	switch lt {
 	case APILimiter:
-		return as.apiLimiterMap, &as.apiLimiterMu
+		return lm.APILimiterMap, &lm.APILimiterMu
 	case AuthLimiter:
-		return as.authLimiterMap, &as.authLimiterMu
+		return lm.AuthLimiterMap, &lm.AuthLimiterMu
 	case FileLimiter:
-		return as.fileLimiterMap, &as.fileLimiterMu
+		return lm.FileLimiterMap, &lm.FileLimiterMu
 	case WebLimiter:
-		return as.webServerLimiterMap, &as.webServerLimiterMu
+		return lm.WebServerLimiterMap, &lm.WebServerLimiterMu
 	default:
 		return nil, nil
 	}
@@ -227,7 +248,7 @@ func (lt LimiterType) AttachToClientIP(ipAddr netip.Addr) error {
 		return errors.New("failed to create limiter for type: " + lt.String())
 	}
 
-	limiterMap[ipAddr] = RateLimiter{
+	limiterMap[ipAddr] = types.RateLimiter{
 		Type:     lt.String(),
 		Limiter:  newLimiter,
 		LastSeen: time.Now(),
@@ -236,8 +257,8 @@ func (lt LimiterType) AttachToClientIP(ipAddr netip.Addr) error {
 }
 
 func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool, blockedUntil time.Time) {
-	as, err := GetAppState()
-	if err != nil || as == nil || ipAddr == (netip.Addr{}) || !ipAddr.IsValid() || !lt.IsValid() {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil || ipAddr == (netip.Addr{}) || !ipAddr.IsValid() || !lt.IsValid() {
 		return false, blockedUntil
 	}
 
@@ -285,26 +306,26 @@ func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool
 		if !banExpiry.After(now) {
 			banExpiry = now.Add(time.Minute)
 		}
-		as.bannedClientsMu.Lock()
-		as.bannedClients[ipAddr] = banExpiry
-		as.bannedClientsMu.Unlock()
+		lm.BannedClientsMu.Lock()
+		lm.BannedClients[ipAddr] = banExpiry
+		lm.BannedClientsMu.Unlock()
 		return true, banExpiry
 	}
 	return false, blockedUntil
 }
 
 func IsIPBlocked(ipAddr netip.Addr) (isBlocked bool, blockedUntil time.Time) {
-	as, err := GetAppState()
-	if err != nil || ipAddr == (netip.Addr{}) || !ipAddr.IsValid() {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil || ipAddr == (netip.Addr{}) || !ipAddr.IsValid() {
 		return false, blockedUntil
 	}
 
-	as.bannedClientsMu.Lock()
-	defer as.bannedClientsMu.Unlock()
+	lm.BannedClientsMu.Lock()
+	defer lm.BannedClientsMu.Unlock()
 	now := time.Now()
-	if blockedUntil, exists := as.bannedClients[ipAddr]; exists {
+	if blockedUntil, exists := lm.BannedClients[ipAddr]; exists {
 		if !blockedUntil.After(now) {
-			delete(as.bannedClients, ipAddr) // Remove from banned list after ban expires
+			delete(lm.BannedClients, ipAddr) // Remove from banned list after ban expires
 			return false, blockedUntil
 		}
 		return true, blockedUntil
@@ -313,49 +334,49 @@ func IsIPBlocked(ipAddr netip.Addr) (isBlocked bool, blockedUntil time.Time) {
 }
 
 func BlockIP(ip netip.Addr) {
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil {
 		return
 	}
-	appState.bannedClientsMu.Lock()
-	defer appState.bannedClientsMu.Unlock()
-	if _, exists := appState.bannedClients[ip]; !exists {
-		appState.bannedClients[ip] = nextBanExpiry(time.Now())
+	lm.BannedClientsMu.Lock()
+	defer lm.BannedClientsMu.Unlock()
+	if _, exists := lm.BannedClients[ip]; !exists {
+		lm.BannedClients[ip] = nextBanExpiry(time.Now())
 	}
 }
 
 func CleanupExpiredBans() (totalDeleted int64, totalEntries int64, err error) {
-	as, err := GetAppState()
-	if err != nil || as == nil {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil {
 		return
 	}
 
 	now := time.Now()
-	as.bannedClientsMu.Lock()
-	defer as.bannedClientsMu.Unlock()
-	for ip, expiry := range as.bannedClients {
+	lm.BannedClientsMu.Lock()
+	defer lm.BannedClientsMu.Unlock()
+	for ip, expiry := range lm.BannedClients {
 		if !expiry.After(now) {
-			delete(as.bannedClients, ip)
+			delete(lm.BannedClients, ip)
 			atomic.AddInt64(&totalDeleted, 1)
 		}
 	}
-	totalEntries = int64(len(as.bannedClients))
+	totalEntries = int64(len(lm.BannedClients))
 	return totalDeleted, totalEntries, nil
 }
 
 func CleanupOldLimiterEntries() (totalDeleted int64, totalEntries int64, err error) {
-	as, err := GetAppState()
-	if err != nil {
+	lm, err := GetRateLimiters()
+	if err != nil || lm == nil {
 		return totalDeleted, totalEntries, types.CannotGetAppStateError
 	}
 	now := time.Now()
 	var wg sync.WaitGroup
 
-	allMaps := []mapWithMutex{
-		{mu: &as.webServerLimiterMu, m: as.webServerLimiterMap},
-		{mu: &as.apiLimiterMu, m: as.apiLimiterMap},
-		{mu: &as.authLimiterMu, m: as.authLimiterMap},
-		{mu: &as.fileLimiterMu, m: as.fileLimiterMap},
+	allMaps := []rateLimiterMap{
+		{mu: &lm.WebServerLimiterMu, m: lm.WebServerLimiterMap},
+		{mu: &lm.APILimiterMu, m: lm.APILimiterMap},
+		{mu: &lm.AuthLimiterMu, m: lm.AuthLimiterMap},
+		{mu: &lm.FileLimiterMu, m: lm.FileLimiterMap},
 	}
 	for _, val := range allMaps {
 		wg.Go(func() {

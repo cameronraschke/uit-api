@@ -5,34 +5,33 @@ import (
 	"net"
 	"net/http"
 	"time"
-	"uit-api/config"
 	"uit-api/endpoints"
-	"uit-api/middleware"
+	"uit-api/logger"
 )
 
 func StartFileServer(ctx context.Context, serverHost string) error {
-	log := config.GetLogger()
-	httpBaseChain := middleware.NewChain(
-		middleware.StoreLoggerMiddleware,
-		middleware.PanicRecoveryMiddleware,
-		middleware.LimitRequestSizeMiddleware,
-		middleware.StoreClientIPMiddleware,
-		middleware.CheckIPBlockedMiddleware,
-		middleware.AllowIPRangeMiddleware("lan"),
-		middleware.WebEndpointConfigMiddleware,
-		middleware.TLSMiddleware,
-		middleware.CheckHttpVersionMiddleware,
-		middleware.RateLimitMiddleware("file"),
-		middleware.FileServerTimeoutMiddleware,
-		middleware.HTTPMethodMiddleware,
-		middleware.CheckValidURLMiddleware,
-		middleware.CheckForRedirectsMiddleware,
-		middleware.CheckHeadersMiddleware,
-		middleware.SetHeadersMiddleware,
+	log := logger.GetLogger()
+	httpBaseChain := endpoints.NewChain(
+		endpoints.StoreLoggerMiddleware,
+		endpoints.PanicRecoveryMiddleware,
+		endpoints.LimitRequestSizeMiddleware,
+		endpoints.StoreClientIPMiddleware,
+		endpoints.CheckIPBlockedMiddleware,
+		endpoints.AllowIPRangeMiddleware("lan"),
+		endpoints.WebEndpointConfigMiddleware,
+		endpoints.TLSMiddleware,
+		endpoints.CheckHttpVersionMiddleware,
+		endpoints.RateLimitMiddleware("file"),
+		endpoints.FileServerTimeoutMiddleware,
+		endpoints.HTTPMethodMiddleware,
+		endpoints.CheckValidURLMiddleware,
+		endpoints.CheckForRedirectsMiddleware,
+		endpoints.CheckHeadersMiddleware,
+		endpoints.SetHeadersMiddleware,
 	)
 
 	fileServerChain := httpBaseChain.Append(
-		middleware.AllowedFilesMiddleware,
+		endpoints.AllowedFilesMiddleware,
 	)
 
 	httpMux := http.NewServeMux()

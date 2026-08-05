@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"uit-api/config"
 	"uit-api/types"
 
 	"github.com/google/uuid"
@@ -109,7 +108,7 @@ func lockClientRowBySystemSerialPGX(ctx context.Context, tx pgx.Tx, systemSerial
 }
 
 func NewUpdateRepo() (Update, error) {
-	db, err := config.GetDatabaseConn()
+	db, err := GetDatabasePool()
 	if err != nil {
 		return nil, fmt.Errorf("error getting database connection in NewUpdateRepo: %w", err)
 	}
@@ -146,7 +145,7 @@ func InsertNewNote(ctx context.Context, timestamp *time.Time, noteType *string, 
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "note type")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -187,7 +186,7 @@ func UpdateClientHealthUpdate(ctx context.Context, transactionUUID uuid.UUID, cl
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "ClientHealthDTO is nil")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -257,7 +256,7 @@ func InsertClientCheckoutsUpdate(ctx context.Context, transactionUUID uuid.UUID,
 	// 	return nil
 	// }
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -329,7 +328,7 @@ func UpdateInventoryHardwareData(ctx context.Context, transactionUUID uuid.UUID,
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -402,7 +401,7 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -637,7 +636,7 @@ func UpdateClientImages(ctx context.Context, transactionUUID uuid.UUID, manifest
 		return fmt.Errorf("%w: invalid manifest: %s", types.InvalidStructureError, "ImageManifestDTO")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -721,7 +720,7 @@ func HideClientImageByUUID(ctx context.Context, fileUUID string) (err error) {
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "file UUID")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -768,7 +767,7 @@ func TogglePinImage(ctx context.Context, tagnumber int64, fileUUID *string) (err
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "file UUID")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -813,7 +812,7 @@ func SetAllOnlineClientJobs(ctx context.Context, clientJob string) (err error) {
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "job name")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -862,7 +861,7 @@ func SetClientJob(ctx context.Context, tag int64, clientJob string) (err error) 
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "client job name")
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -915,7 +914,7 @@ func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpda
 		return ctx.Err()
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -977,7 +976,7 @@ func UpsertClientMemoryCapacityKB(ctx context.Context, memInfo types.MemoryDataU
 		return ctx.Err()
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1048,7 +1047,7 @@ func UpsertClientCPUUsage(ctx context.Context, cpuData *types.CPUDataUpdateDTO) 
 		return fmt.Errorf("context error: %w", ctx.Err())
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1114,7 +1113,7 @@ func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (e
 		return ctx.Err()
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1238,7 +1237,7 @@ func UpsertClientCPUTemperature(ctx context.Context, cpuTempData *types.CPUDataU
 		return ctx.Err()
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1401,7 +1400,7 @@ func UpsertClientHealthCheck(ctx context.Context, healthCheck *types.ClientHealt
 		return fmt.Errorf("context error: %w", ctx.Err())
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1530,7 +1529,7 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 		return fmt.Errorf("context error: %w", ctx.Err())
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1918,7 +1917,7 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 		return fmt.Errorf("%w: %w", types.ContextError, ctx.Err())
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2175,7 +2174,7 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		return fmt.Errorf("%w: %s", types.MissingFieldError, "TransactionUUID")
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2597,7 +2596,7 @@ func InitClient(ctx context.Context, dto *types.ClientInitDTO) (clientUUID *stri
 	if dto == nil {
 		return nil, fmt.Errorf("%w: %s", types.InvalidStructureError, "ClientInitDTO")
 	}
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2648,7 +2647,7 @@ func UpsertJobStats(ctx context.Context, JobStatsDTO *types.JobStatsDTO) (err er
 	if JobStatsDTO == nil {
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "JobStatsDTO")
 	}
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2781,7 +2780,7 @@ func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}

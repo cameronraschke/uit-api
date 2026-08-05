@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-	"uit-api/config"
+	"uit-api/appstate"
+	"uit-api/auth"
 	"uit-api/database"
+	"uit-api/logger"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -77,7 +79,7 @@ func runBackgroundProcess(cfg backgroundProcessConfig) error {
 func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 	errGroup, errCtx := errgroup.WithContext(ctx)
 
-	log := config.GetLogger().With(slog.String("func", "startBackgroundProcesses"))
+	log := logger.GetLogger().With(slog.String("func", "startBackgroundProcesses"))
 	logChan := make(chan string, 10) // Buffered channel for log messages
 
 	// Listen for log messages from background processes
@@ -117,9 +119,9 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			Interval: authMapCleanupInterval,
 			StopMsg:  "Auth map cleanup goroutine stopping...",
 			Run: func(context.Context) (logMsg []string, err error) {
-				originalSessionCount := config.GetAuthSessionCount()
-				config.ClearExpiredAuthSessions()
-				newSessionCount := config.GetAuthSessionCount()
+				originalSessionCount := auth.GetAuthSessionCount()
+				auth.ClearExpiredAuthSessions()
+				newSessionCount := auth.GetAuthSessionCount()
 				sessionDiff := originalSessionCount - newSessionCount
 				return []string{fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", newSessionCount, sessionDiff)}, nil
 			},
@@ -155,7 +157,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			Interval: rateLimiterCleanupInterval,
 			StopMsg:  "Rate limiter cleanup goroutine stopping...",
 			Run: func(context.Context) (logMsg []string, err error) {
-				entriesDeleted, totalEntries, err := config.CleanupOldLimiterEntries()
+				entriesDeleted, totalEntries, err := auth.CleanupOldLimiterEntries()
 				if err != nil {
 					logMsg = append(logMsg, fmt.Sprintf("error cleaning up old rate limiter entries: %v", err))
 				}
@@ -177,7 +179,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			Interval: bannedClientsCleanupInterval,
 			StopMsg:  "Banned clients cleanup goroutine stopping...",
 			Run: func(context.Context) (logMsg []string, err error) {
-				deletedCount, totalCount, err := config.CleanupExpiredBans()
+				deletedCount, totalCount, err := auth.CleanupExpiredBans()
 				if err != nil {
 					logMsg = append(logMsg, fmt.Sprintf("error cleaning up expired banned clients: %v", err))
 				}
@@ -199,7 +201,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			Interval: liveScreenshotCleanupInterval,
 			StopMsg:  "Offline clients cleanup goroutine stopping...",
 			Run: func(context.Context) (logMsg []string, err error) {
-				entriesDeleted, entriesSkipped, totalEntries := config.ClearOfflineLiveImageBytes()
+				entriesDeleted, entriesSkipped, totalEntries := appstate.ClearOfflineLiveImageBytes()
 				logMsg = append(logMsg, fmt.Sprintf("live screenshot cleanup done (deleted=%d, skipped=%d, total=%d)", entriesDeleted, entriesSkipped, totalEntries))
 				return logMsg, nil
 			},
@@ -218,7 +220,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			Interval: flushLogBufferInterval,
 			StopMsg:  "Log buffer flush goroutine stopping...",
 			Run: func(context.Context) (logMsg []string, err error) {
-				if err := config.FlushLogBuffers(); err != nil {
+				if err := logger.FlushLogBuffers(); err != nil {
 					logMsg = append(logMsg, fmt.Sprintf("error flushing log buffers: %v", err))
 				}
 				return logMsg, err
@@ -239,11 +241,11 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 }
 
 func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []string, err error) {
-	log := config.GetLogger().With(slog.String("func", "writeLastHeardToDB"))
+	log := logger.GetLogger().With(slog.String("func", "writeLastHeardToDB"))
 	backgroundCtx, cancel := context.WithTimeout(parentCtx, 45*time.Second)
 	defer cancel()
 
-	realtimeData, err := config.GetAllClientRealtimeData()
+	realtimeData, err := appstate.GetAllClientRealtimeData()
 	if err != nil {
 		logMsg = append(logMsg, fmt.Sprintf("Error retrieving client realtime data: %v", err))
 		return logMsg, nil

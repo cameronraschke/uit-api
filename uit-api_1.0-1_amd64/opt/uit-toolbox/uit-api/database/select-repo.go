@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"uit-api/config"
+	"uit-api/appstate"
 	"uit-api/types"
 
 	"github.com/google/uuid"
@@ -40,7 +40,7 @@ type SelectRepo struct {
 const approxClientCount = 600
 
 func NewSelectRepo() (Select, error) {
-	db, err := config.GetDatabaseConn()
+	db, err := GetDatabasePool()
 	if err != nil {
 		return nil, fmt.Errorf("error getting database connection in NewSelectRepo: %w", err)
 	}
@@ -54,7 +54,7 @@ func GetClientUUIDByTag(ctx context.Context, pgxPool *pgxpool.Pool, tagnumber in
 		return uuid.Nil, fmt.Errorf("tagnumber is nil or invalid: %w", err)
 	}
 	if pgxPool == nil {
-		pgxPool, err = config.GetPGXPool()
+		pgxPool, err = GetPGXPool()
 		if err != nil {
 			return uuid.Nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 		}
@@ -86,7 +86,7 @@ func GetClientUUIDBySerial(ctx context.Context, pgxPool *pgxpool.Pool, systemSer
 		return uuid.Nil, fmt.Errorf("%w: systemSerial is empty", types.InvalidStructureError)
 	}
 	if pgxPool == nil {
-		pgxPool, err = config.GetPGXPool()
+		pgxPool, err = GetPGXPool()
 		if err != nil {
 			return uuid.Nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 		}
@@ -114,7 +114,7 @@ func GetClientUUIDBySerial(ctx context.Context, pgxPool *pgxpool.Pool, systemSer
 }
 
 func SelectAllIDs(ctx context.Context) ([]types.ClientLookupRow, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -194,7 +194,7 @@ func ClientIDLookup(ctx context.Context, tag int64, serial string) (*types.Clien
 		return nil, fmt.Errorf("%s", "both tagnumber and system serial are invalid/empty")
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -229,7 +229,7 @@ func ClientIDLookup(ctx context.Context, tag int64, serial string) (*types.Clien
 }
 
 func GetAllDepartments(ctx context.Context) ([]types.AllDepartmentsRow, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -296,7 +296,7 @@ func GetAllDepartments(ctx context.Context) ([]types.AllDepartmentsRow, error) {
 }
 
 func GetAllDomains(ctx context.Context) ([]types.AllDomainsRow, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -351,7 +351,7 @@ func GetAllDomains(ctx context.Context) ([]types.AllDomainsRow, error) {
 }
 
 func SelectAllManufacturersAndModels(ctx context.Context) ([]types.AllManufacturersAndModelsRow, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -472,7 +472,7 @@ func SelectIsClientJobAvailable(ctx context.Context, tag int64) (*bool, error) {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
 	}
 
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -504,7 +504,7 @@ func GetNotes(ctx context.Context, noteType string) (*types.GeneralNoteResponse,
 		return nil, fmt.Errorf("%w: %s", types.InvalidFieldError, "noteType is nil or empty")
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -545,7 +545,7 @@ func GetLocationFormData(ctx context.Context, tag int64, serial string) (*types.
 		return nil, fmt.Errorf("%w: both tag and serial are invalid", types.DatabaseRowScanError)
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -693,7 +693,7 @@ func GetClientImageManifestByTag(ctx context.Context, tagnumber int64) ([]types.
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -756,7 +756,7 @@ func GetClientImageManifestByFileUUID(ctx context.Context, fileUUID string) (*ty
 		return nil, fmt.Errorf("file UUID is nil")
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1072,7 +1072,7 @@ func GetInventoryTableData(ctx context.Context, filterOptions *types.InventoryAd
 		ORDER BY locations.time DESC NULLS LAST
 	;`, whereSQL)
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1305,7 +1305,7 @@ func ModifyClientConfigErrorResults(results []types.InventoryTableRow) ([]types.
 }
 
 func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1527,7 +1527,7 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 	LEFT JOIN static_department_info ON static_department_info.department_name = locations.department_name
 	;`
 
-	onlineClientsMap, err := config.GetAllOnlineClientsData()
+	onlineClientsMap, err := appstate.GetAllOnlineClientsData()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)
 	}
@@ -1634,7 +1634,7 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 }
 
 func SelectAllJobs(ctx context.Context) ([]types.AllJobsRow, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1695,7 +1695,7 @@ func GetAllLocations(ctx context.Context) ([]types.AllLocationsRow, error) {
 			location ASC, timestamp DESC
 	;`
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1731,7 +1731,7 @@ func GetAllLocations(ctx context.Context) ([]types.AllLocationsRow, error) {
 }
 
 func GetAllStatuses(ctx context.Context) (map[string][]types.AllClientStatuses, error) {
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1811,7 +1811,7 @@ func GetAllDeviceTypes(ctx context.Context) ([]types.AllDeviceTypesRow, error) {
 		static_device_types.sort_order
 	;`
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1879,7 +1879,7 @@ func GetClientHardwareOverview(ctx context.Context, tag int64) ([]types.ClientHa
 		ids.time DESC NULLS LAST LIMIT 1
 	;`
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1919,7 +1919,7 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 		return queuePositionMaxValue, err
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -1929,7 +1929,7 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
 
-	onlineClientData, err := config.GetAllOnlineClientsData()
+	onlineClientData, err := appstate.GetAllOnlineClientsData()
 	if err != nil {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)
 	}
@@ -2006,7 +2006,7 @@ func GetJobName(ctx context.Context, tag int64) (*string, error) {
 		tagnumber = $1
 	;`
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2029,7 +2029,7 @@ func GetFormattedJobName(ctx context.Context, jobName string) (*string, error) {
 		return nil, fmt.Errorf("job name is empty")
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2060,7 +2060,7 @@ func GetFormattedJobName(ctx context.Context, jobName string) (*string, error) {
 }
 
 func GetAllBuildingsAndRooms(ctx context.Context) ([]types.AllBuildingsAndRooms, error) {
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2117,7 +2117,7 @@ func SelectCheckoutData(ctx context.Context, tag int64) (*types.CheckoutLogRespo
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, err
 	}
-	dbConn, err := config.GetDatabaseConn()
+	dbConn, err := GetDatabasePool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2161,7 +2161,7 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
 	}
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2545,7 +2545,7 @@ func SelectDiskImageByModel(ctx context.Context, r *types.DiskImageNameRequest) 
 			AND static_image_names.system_model = $1
 	;`
 
-	pgxPool, err := config.GetPGXPool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}

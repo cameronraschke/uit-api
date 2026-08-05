@@ -6,12 +6,59 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"time"
+	"uit-api/config"
 	"uit-api/types"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
+
+func GetDatabasePool() (*sql.DB, error) {
+	db := stdLibDBPool.Load()
+	if db == nil {
+		return nil, types.DatabaseConnNilError
+	}
+	return db, nil
+}
+
+func GetPGXPool() (*pgxpool.Pool, error) {
+	pool := pgxPool.Load()
+	if pool == nil {
+		return nil, types.DatabaseConnNilError
+	}
+	return pool, nil
+}
+
+// Database managment
+func GetDatabaseCredentials() (dbConnection *types.DBConnection, err error) {
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
+	}
+	return &types.DBConnection{
+		DBName:     ac.WebDBName,
+		DBHost:     ac.WebDBHost.String(),
+		DBPort:     strconv.FormatUint(uint64(ac.WebDBPort), 10),
+		DBUsername: ac.WebDBUsername,
+		DBPassword: ac.WebDBPasswd,
+	}, nil
+}
+
+func GetWebServerUserDBCredentials() (dbConnection *types.DBConnection, err error) {
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
+	}
+	return &types.DBConnection{
+		DBName:     ac.WebDBName,
+		DBHost:     ac.WebDBHost.String(),
+		DBPort:     strconv.FormatUint(uint64(ac.WebDBPort), 10),
+		DBUsername: ac.WebDBUsername,
+		DBPassword: ac.WebDBPasswd,
+	}, nil
+}
 
 func NewDBConnection(dbConnection *types.DBConnection) (*sql.DB, error) {
 	if dbConnection == nil {

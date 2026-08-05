@@ -1,169 +1,82 @@
 package config
 
 import (
-	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"maps"
 	"net"
 	"net/netip"
 	"os"
 	"strconv"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 	"uit-api/types"
-
-	"github.com/google/uuid"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-type AppConfiguration struct {
-	FormConstraints      atomic.Pointer[types.HTMLFormConstraints]
-	FileConstraints      atomic.Pointer[types.FileUploadConstraints]
-	LogLevel             string         `json:"UIT_SERVER_LOG_LEVEL"`
-	AdminPasswd          string         `json:"UIT_SERVER_ADMIN_PASSWD"`
-	DBName               string         `json:"UIT_SERVER_DB_NAME"`
-	ServerHostname       string         `json:"UIT_SERVER_HOSTNAME"`
-	WANAddr              netip.Addr     `json:"UIT_SERVER_WAN_IP_ADDRESS"`
-	LANAddr              netip.Addr     `json:"UIT_SERVER_LAN_IP_ADDRESS"`
-	WANIfaceName         string         `json:"UIT_SERVER_WAN_IF"`
-	LANIfaceName         string         `json:"UIT_SERVER_LAN_IF"`
-	AllowedWANIPs        []netip.Prefix `json:"UIT_SERVER_WAN_ALLOWED_IP"`
-	AllowedLANIPs        []netip.Prefix `json:"UIT_SERVER_LAN_ALLOWED_IP"`
-	AllAllowedIPs        []netip.Prefix `json:"UIT_SERVER_ANY_ALLOWED_IP"`
-	WebUserDefaultPasswd string         `json:"UIT_WEB_USER_DEFAULT_PASSWD"`
-	WebDBUsername        string         `json:"UIT_WEB_DB_USERNAME"`
-	WebDBPasswd          string         `json:"UIT_WEB_DB_PASSWD"`
-	WebDBName            string         `json:"UIT_WEB_DB_NAME"`
-	WebDBHost            netip.Addr     `json:"UIT_WEB_DB_HOST"`
-	WebDBPort            uint16         `json:"UIT_WEB_DB_PORT"`
-	WebHTTPAddr          netip.Addr     `json:"UIT_WEB_HTTP_HOST"`
-	WebHTTPPort          uint16         `json:"UIT_WEB_HTTP_PORT"`
-	WebHTTPSAddr         netip.Addr     `json:"UIT_WEB_HTTPS_HOST"`
-	WebHTTPSPort         uint16         `json:"UIT_WEB_HTTPS_PORT"`
-	WebTLSCertFile       string         `json:"UIT_WEB_TLS_CERT_FILE"`
-	WebTLSKeyFile        string         `json:"UIT_WEB_TLS_KEY_FILE"`
-	APIRequestTimeout    time.Duration  `json:"UIT_WEB_API_REQUEST_TIMEOUT"`
-	FileRequestTimeout   time.Duration  `json:"UIT_WEB_FILE_REQUEST_TIMEOUT"`
-	RateLimitBurst       int            `json:"UIT_WEB_RATE_LIMIT_BURST"`
-	RateLimitInterval    float64        `json:"UIT_WEB_RATE_LIMIT_INTERVAL"`
-	RateLimitTimeout     time.Duration  `json:"UIT_WEB_RATE_LIMIT_BAN_DURATION"`
-	ClientDBUser         string         `json:"UIT_CLIENT_DB_USER"`
-	ClientDBPasswd       string         `json:"UIT_CLIENT_DB_PASSWD"`
-	ClientDBName         string         `json:"UIT_CLIENT_DB_NAME"`
-	ClientDBHost         netip.Addr     `json:"UIT_CLIENT_DB_HOST"`
-	ClientDBPort         uint16         `json:"UIT_CLIENT_DB_PORT"`
-	ClientNTPHost        netip.Addr     `json:"UIT_CLIENT_NTP_HOST"`
-	ClientPingHost       netip.Addr     `json:"UIT_CLIENT_PING_HOST"`
-	WebmasterName        string         `json:"UIT_WEBMASTER_NAME"`
-	WebmasterEmail       string         `json:"UIT_WEBMASTER_EMAIL"`
-}
-
-type ClientConfig struct {
-	UIT_CLIENT_DB_USER   string `json:"UIT_CLIENT_DB_USER"`
-	UIT_CLIENT_DB_PASSWD string `json:"UIT_CLIENT_DB_PASSWD"`
-	UIT_CLIENT_DB_NAME   string `json:"UIT_CLIENT_DB_NAME"`
-	UIT_CLIENT_DB_HOST   string `json:"UIT_CLIENT_DB_HOST"`
-	UIT_CLIENT_DB_PORT   string `json:"UIT_CLIENT_DB_PORT"`
-	UIT_CLIENT_NTP_HOST  string `json:"UIT_CLIENT_NTP_HOST"`
-	UIT_CLIENT_PING_HOST string `json:"UIT_CLIENT_PING_HOST"`
-	UIT_SERVER_HOSTNAME  string `json:"UIT_SERVER_HOSTNAME"`
-	UIT_WEB_HTTP_HOST    string `json:"UIT_WEB_HTTP_HOST"`
-	UIT_WEB_HTTP_PORT    string `json:"UIT_WEB_HTTP_PORT"`
-	UIT_WEB_HTTPS_HOST   string `json:"UIT_WEB_HTTPS_HOST"`
-	UIT_WEB_HTTPS_PORT   string `json:"UIT_WEB_HTTPS_PORT"`
-	UIT_WEBMASTER_NAME   string `json:"UIT_WEBMASTER_NAME"`
-	UIT_WEBMASTER_EMAIL  string `json:"UIT_WEBMASTER_EMAIL"`
-}
-
-type AppState struct {
-	appStateMu           sync.Mutex
-	appConfig            atomic.Pointer[AppConfiguration]
-	dbConn               atomic.Pointer[sql.DB]
-	pgxPool              atomic.Pointer[pgxpool.Pool]
-	authMapMutex         sync.RWMutex
-	authMap              map[string]types.AuthSession
-	appLogger            atomic.Pointer[slog.Logger]
-	webServerLimiterMu   sync.RWMutex
-	webServerLimiterMap  map[netip.Addr]RateLimiter
-	fileLimiterMu        sync.RWMutex
-	fileLimiterMap       map[netip.Addr]RateLimiter
-	apiLimiterMu         sync.RWMutex
-	apiLimiterMap        map[netip.Addr]RateLimiter
-	authLimiterMu        sync.RWMutex
-	authLimiterMap       map[netip.Addr]RateLimiter
-	bannedClientsMu      sync.RWMutex
-	bannedClients        map[netip.Addr]time.Time
-	allowedWANIPs        sync.Map
-	allowedLANIPs        sync.Map
-	allAllowedIPs        sync.Map
-	sessionSecret        []byte
-	APIRequestTimeout    atomic.Int64
-	FileRequestTimeout   atomic.Int64
-	webEndpoints         sync.Map
-	ClientRealtimeDataMu sync.RWMutex
-	ClientRealtimeData   map[int64]types.JobQueueRealtimeData
-	groupPermissions     sync.Map
-	userPermissions      sync.Map
-}
 
 var (
-	appStateInstance atomic.Pointer[AppState]
+	appConfigInstance atomic.Pointer[types.AppConfiguration]
 )
 
-func InitConfig() (*AppConfiguration, error) {
-	var appConfig AppConfiguration
+func InitAppConfig() error {
+	var appConfigCopy types.AppConfiguration
 
 	// Decode config file JSON
 	mainConfigFile, err := os.ReadFile("/etc/uit-toolbox/uit-toolbox.json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config '/etc/uit-toolbox/uit-toolbox.json': %w", err)
+		return fmt.Errorf("failed to read config '/etc/uit-toolbox/uit-toolbox.json': %w", err)
 	}
-	if err := json.Unmarshal(mainConfigFile, &appConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config JSON: %w", err)
+	if err := json.Unmarshal(mainConfigFile, &appConfigCopy); err != nil {
+		return fmt.Errorf("failed to unmarshal config JSON: %w", err)
 	}
 
 	// Convert durations to seconds
-	appConfig.APIRequestTimeout *= time.Second
-	appConfig.FileRequestTimeout *= time.Second
-	appConfig.RateLimitTimeout *= time.Second
+	appConfigCopy.APIRequestTimeout *= time.Second
+	appConfigCopy.FileRequestTimeout *= time.Second
+	appConfigCopy.RateLimitTimeout *= time.Second
 
 	// WAN interface, IP, and allowed IPs
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get network interfaces: %w", err)
+		return fmt.Errorf("failed to get network interfaces: %w", err)
 	}
 	for _, iface := range ifaces {
 		addrs, err := iface.Addrs()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get addresses for WAN interface: %w", err)
+			return fmt.Errorf("failed to get addresses for WAN interface: %w", err)
 		}
 		wanIPFound := false
 		lanIPFound := false
 		for _, addr := range addrs {
 			convIP, ok := addr.(*net.IPNet)
 			if !ok {
-				return nil, fmt.Errorf("address is not an IPNet: %v", addr)
+				return fmt.Errorf("address is not an IPNet: %v", addr)
 			}
-			if iface.Name == appConfig.WANIfaceName && convIP.IP.String() == appConfig.WANAddr.String() {
+			if iface.Name == appConfigCopy.WANIfaceName && convIP.IP.String() == appConfigCopy.WANAddr.String() {
 				wanIPFound = true
 			}
-			if iface.Name == appConfig.LANIfaceName && convIP.IP.String() == appConfig.LANAddr.String() {
+			if iface.Name == appConfigCopy.LANIfaceName && convIP.IP.String() == appConfigCopy.LANAddr.String() {
 				lanIPFound = true
 			}
 		}
-		if iface.Name == appConfig.WANIfaceName && !wanIPFound {
-			return nil, fmt.Errorf("WAN interface %s does not have the expected IP address %s", appConfig.WANIfaceName, appConfig.WANAddr.String())
+		if iface.Name == appConfigCopy.WANIfaceName && !wanIPFound {
+			return fmt.Errorf("WAN interface %s does not have the expected IP address %s", appConfigCopy.WANIfaceName, appConfigCopy.WANAddr.String())
 		}
-		if iface.Name == appConfig.LANIfaceName && !lanIPFound {
-			return nil, fmt.Errorf("LAN interface %s does not have the expected IP address %s", appConfig.LANIfaceName, appConfig.LANAddr.String())
+		if iface.Name == appConfigCopy.LANIfaceName && !lanIPFound {
+			return fmt.Errorf("LAN interface %s does not have the expected IP address %s", appConfigCopy.LANIfaceName, appConfigCopy.LANAddr.String())
 		}
+	}
+
+	// Populate allowed IPs
+	for _, wanIP := range appConfigCopy.AllowedWANIPs {
+		wanIPCopy := wanIP
+		appConfigCopy.AllowedWANMap.Store(&wanIPCopy, true)
+		appConfigCopy.AllAllowedMap.Store(&wanIPCopy, true)
+	}
+
+	for _, lanIP := range appConfigCopy.AllowedLANIPs {
+		lanIPCopy := lanIP
+		appConfigCopy.AllowedLANMap.Store(&lanIPCopy, true)
+		appConfigCopy.AllAllowedMap.Store(&lanIPCopy, true)
 	}
 
 	// Set input constraints
@@ -188,7 +101,7 @@ func InitConfig() (*AppConfiguration, error) {
 		GeneralNote:   generalNoteConstraints,
 		InventoryForm: inventoryFormConstraints,
 	}
-	appConfig.FormConstraints.Store(formConstraints)
+	appConfigCopy.FormConstraints.Store(formConstraints)
 
 	// Set file upload constraints
 	imgConstraints := types.ImageUploadConstraints{
@@ -215,287 +128,27 @@ func InitConfig() (*AppConfiguration, error) {
 		VideoConstraints:       &vidConstraints,
 		MaxUploadFileSizeLimit: 512 << 20,
 	}
-	appConfig.FileConstraints.Store(fileConstraints)
+	appConfigCopy.FileConstraints.Store(fileConstraints)
 
-	return &appConfig, nil
-}
-
-func InitApp() (*AppState, error) {
-	appConfig, err := InitConfig()
-	if err != nil || appConfig == nil {
-		return nil, errors.New("failed to load app config: " + err.Error())
-	}
-
-	appState := new(AppState)
-
-	// Store app config in app state
-	appState.appConfig.Store(appConfig)
-
-	// Set DB connection to nil initially
-	appState.dbConn.Store(nil)
-	appState.pgxPool.Store(nil)
-
-	// Initialize rate limiters
-	if err := appState.initRateLimiters(); err != nil {
-		return nil, fmt.Errorf("failed to initialize rate limiters: %w", err)
-	}
-	// If ban duration not set, fallback to default
-	if appConfig.RateLimitTimeout <= 0 {
-		appConfig.RateLimitTimeout = defaultBanDuration
-	}
-	// Initialize logger
-	if err := appState.initLogger(); err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
-	}
-
-	// Populate allowed IPs
-	for _, wanIP := range appConfig.AllowedWANIPs {
-		wanIPCopy := wanIP
-		appState.allowedWANIPs.Store(&wanIPCopy, true)
-		appState.allAllowedIPs.Store(&wanIPCopy, true)
-	}
-
-	for _, lanIP := range appConfig.AllowedLANIPs {
-		lanIPCopy := lanIP
-		appState.allowedLANIPs.Store(&lanIPCopy, true)
-		appState.allAllowedIPs.Store(&lanIPCopy, true)
-	}
-
-	// Generate server-side secret for HMAC
-	sessionSecret := make([]byte, 32)
-	if _, err := rand.Read(sessionSecret); err != nil {
-		return nil, fmt.Errorf("failed to generate session secret: %w", err)
-	}
-	appState.sessionSecret = sessionSecret
-
-	// Configure web endpoints
-	if err := InitWebEndpoints(appState); err != nil {
-		return nil, fmt.Errorf("failed to initialize web endpoints: %w", err)
-	}
-
-	// Load permissions
-	permissions, err := InitPermissions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load permission config: %w", err)
-	}
-
-	for _, groupPermissions := range permissions.Groups {
-		appState.groupPermissions.Store(groupPermissions.ID, groupPermissions)
-	}
-
-	for _, userPermissions := range permissions.Users {
-		appState.userPermissions.Store(userPermissions.ID, userPermissions)
-	}
-
-	// Set initial timeouts
-	appState.APIRequestTimeout.Store(int64(appConfig.APIRequestTimeout))
-	appState.FileRequestTimeout.Store(int64(appConfig.FileRequestTimeout))
-
-	// Init AuthMap
-	appState.authMap = make(map[string]types.AuthSession)
-
-	// Initialize live image map
-	clientRealtimeDataMap := make(map[int64]types.JobQueueRealtimeData)
-	appState.ClientRealtimeDataMu.Lock()
-	appState.ClientRealtimeData = clientRealtimeDataMap
-	appState.ClientRealtimeDataMu.Unlock()
-
-	// Declare endpoints
-	once := new(sync.Once)
-	once.Do(func() {
-		appState.appStateMu.Lock()
-		defer appState.appStateMu.Unlock()
-		appStateInstance.Store(appState)
-	})
-	return appState, nil
-}
-
-func GetAppState() (*AppState, error) {
-	appState := appStateInstance.Load()
-	if appState == nil {
-		return nil, fmt.Errorf("%w", types.NilAppStateError)
-	}
-	return appState, nil
-}
-
-// Database managment
-func GetDatabaseCredentials() (dbConnection *types.DBConnection, err error) {
-	as, err := GetAppState()
-	if err != nil {
-		return nil, fmt.Errorf("error getting app state in GetDatabaseCredentials: %w", err)
-	}
-	return &types.DBConnection{
-		DBName:     as.appConfig.Load().WebDBName,
-		DBHost:     as.appConfig.Load().WebDBHost.String(),
-		DBPort:     strconv.FormatUint(uint64(as.appConfig.Load().WebDBPort), 10),
-		DBUsername: as.appConfig.Load().WebDBUsername,
-		DBPassword: as.appConfig.Load().WebDBPasswd,
-	}, nil
-}
-
-func GetWebServerUserDBCredentials() (dbConnection *types.DBConnection, err error) {
-	as, err := GetAppState()
-	if err != nil {
-		return nil, fmt.Errorf("error getting app state in GetWebServerUserDBCredentials: %w", err)
-	}
-	return &types.DBConnection{
-		DBName:     as.appConfig.Load().WebDBName,
-		DBHost:     as.appConfig.Load().WebDBHost.String(),
-		DBPort:     strconv.FormatUint(uint64(as.appConfig.Load().WebDBPort), 10),
-		DBUsername: as.appConfig.Load().WebDBUsername,
-		DBPassword: as.appConfig.Load().WebDBPasswd,
-	}, nil
-}
-
-func GetDatabaseConn() (*sql.DB, error) {
-	as, err := GetAppState()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	db := as.dbConn.Load()
-	if db == nil {
-		return nil, types.DatabaseConnNilError
-	}
-	return db, nil
-}
-
-func SetDatabaseConn(newDbConn *sql.DB) error {
-	if newDbConn == nil {
-		return types.DatabaseConnNilError
-	}
-	appState, err := GetAppState()
-	if err != nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	if appState == nil {
-		return types.NilAppStateError
-	}
-	appState.dbConn.Store(newDbConn)
+	appConfigInstance.Store(&appConfigCopy)
 	return nil
 }
 
-func GetPGXPool() (*pgxpool.Pool, error) {
-	as, err := GetAppState()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+func GetAppConfig() (*types.AppConfiguration, error) {
+	ac := appConfigInstance.Load()
+	if ac == nil {
+		return nil, fmt.Errorf("%w", types.NilAppConfigError)
 	}
-	pool := as.pgxPool.Load()
-	if pool == nil {
-		return nil, types.DatabaseConnNilError
-	}
-	return pool, nil
-}
-
-func SetPGXPool(newPool *pgxpool.Pool) error {
-	if newPool == nil {
-		return types.DatabaseConnNilError
-	}
-	appState, err := GetAppState()
-	if err != nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	if appState == nil {
-		return types.NilAppStateError
-	}
-	appState.pgxPool.Store(newPool)
-	return nil
-}
-
-// IP address checks
-func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (allowed bool, retryAt time.Time, err error) {
-	appState, err := GetAppState()
-	if err != nil {
-		return allowed, retryAt, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	if !ipAddr.IsValid() {
-		return allowed, retryAt, fmt.Errorf("request IP is invalid or blocked")
-	}
-
-	var lt LimiterType
-	if strings.TrimSpace(limiterType) != "" {
-		lt = ToLimiterType(limiterType)
-		if !lt.IsValid() {
-			return true, retryAt, fmt.Errorf("invalid limiter type: %s", limiterType)
-		}
-	}
-
-	switch strings.TrimSpace(strings.ToLower(networkDomain)) {
-	case "wan":
-		allowed, err = ipAllowedInRanges(ipAddr, &appState.allowedWANIPs)
-		if err != nil {
-			return allowed, retryAt, fmt.Errorf("error checking WAN IP ranges: %w", err)
-		}
-	case "lan":
-		allowed, err = ipAllowedInRanges(ipAddr, &appState.allowedLANIPs)
-		if err != nil {
-			return allowed, retryAt, fmt.Errorf("error checking LAN IP ranges: %w", err)
-		}
-	case "any":
-		allowed, err = ipAllowedInRanges(ipAddr, &appState.allAllowedIPs)
-		if err != nil {
-			return allowed, retryAt, fmt.Errorf("error checking IP ranges: %w", err)
-		}
-	default:
-		return allowed, retryAt, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
-	}
-
-	if lt.IsValid() {
-		isRateLimited, bannedUntil := lt.IsClientRateLimited(ipAddr)
-		if isRateLimited {
-			return false, bannedUntil, fmt.Errorf("client is rate limited until %s", bannedUntil.Format(time.RFC3339))
-		}
-	}
-	return allowed, retryAt, nil
-}
-
-func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err error) {
-	if ranges == nil {
-		return false, fmt.Errorf("IP range map is nil")
-	}
-
-	allowed = false
-	ranges.Range(func(k, v any) bool {
-		ipRangePtr, ok := k.(*netip.Prefix)
-		if !ok || ipRangePtr == nil {
-			return true
-		}
-		ipRange := *ipRangePtr
-		if ipRange == (netip.Prefix{}) {
-			return true
-		}
-		if ipRange.Contains(ipAddr) {
-			allowed = true
-			return false
-		}
-		return true
-	})
-	return allowed, nil
-}
-
-func CleanupBlockedIPs() {
-	as, err := GetAppState()
-	if err != nil {
-		return
-	}
-
-	as.bannedClientsMu.Lock()
-	defer as.bannedClientsMu.Unlock()
-
-	now := time.Now()
-	for ip, bannedUntil := range as.bannedClients {
-		if now.After(bannedUntil) {
-			delete(as.bannedClients, ip)
-		}
-	}
+	return ac, nil
 }
 
 // Webserver config
 func GetWebServerIPs() (httpIP string, httpsIP string, err error) {
-	appState, err := GetAppState()
+	ac, err := GetAppConfig()
 	if err != nil {
-		return "", "", fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return "", "", fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	return appState.appConfig.Load().WebHTTPAddr.String(), appState.appConfig.Load().WebHTTPSAddr.String(), nil
+	return ac.WebHTTPAddr.String(), ac.WebHTTPSAddr.String(), nil
 }
 
 func GetServerIPAddressByInterface(ifName string) (string, error) {
@@ -526,61 +179,54 @@ func GetServerIPAddressByInterface(ifName string) (string, error) {
 }
 
 func GetWebmasterContact() (webmasterName string, webmasterEmail string, err error) {
-	appState, err := GetAppState()
+	ac, err := GetAppConfig()
 	if err != nil {
-		return "", "", fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return "", "", fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	return appState.appConfig.Load().WebmasterName, appState.appConfig.Load().WebmasterEmail, nil
+	return ac.WebmasterName, ac.WebmasterEmail, nil
 }
 
-func GetClientConfig() (*ClientConfig, error) {
-	appState, err := GetAppState()
+func GetClientConfig() (*types.ClientConfig, error) {
+	ac, err := GetAppConfig()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	appConfig := appState.appConfig.Load()
-	if appConfig == nil {
-		return nil, fmt.Errorf("%w: app config is not loaded in GetClientConfig", types.CannotGetAppStateError)
-	}
+	appConfigCopy := ac
 
-	clientConfig := &ClientConfig{
-		UIT_CLIENT_DB_USER:   appConfig.ClientDBUser,
-		UIT_CLIENT_DB_PASSWD: appConfig.ClientDBPasswd,
-		UIT_CLIENT_DB_NAME:   appConfig.ClientDBName,
-		UIT_CLIENT_DB_HOST:   appConfig.ClientDBHost.String(),
-		UIT_CLIENT_DB_PORT:   strconv.FormatUint(uint64(appConfig.ClientDBPort), 10),
-		UIT_CLIENT_NTP_HOST:  appConfig.ClientNTPHost.String(),
-		UIT_CLIENT_PING_HOST: appConfig.ClientPingHost.String(),
-		UIT_SERVER_HOSTNAME:  appConfig.ServerHostname,
-		UIT_WEB_HTTP_HOST:    appConfig.WebHTTPAddr.String(),
-		UIT_WEB_HTTP_PORT:    strconv.FormatUint(uint64(appConfig.WebHTTPPort), 10),
-		UIT_WEB_HTTPS_HOST:   appConfig.WebHTTPSAddr.String(),
-		UIT_WEB_HTTPS_PORT:   strconv.FormatUint(uint64(appConfig.WebHTTPSPort), 10),
-		UIT_WEBMASTER_NAME:   appConfig.WebmasterName,
-		UIT_WEBMASTER_EMAIL:  appConfig.WebmasterEmail,
+	clientConfig := &types.ClientConfig{
+		UIT_CLIENT_DB_USER:   appConfigCopy.ClientDBUser,
+		UIT_CLIENT_DB_PASSWD: appConfigCopy.ClientDBPasswd,
+		UIT_CLIENT_DB_NAME:   appConfigCopy.ClientDBName,
+		UIT_CLIENT_DB_HOST:   appConfigCopy.ClientDBHost.String(),
+		UIT_CLIENT_DB_PORT:   strconv.FormatUint(uint64(appConfigCopy.ClientDBPort), 10),
+		UIT_CLIENT_NTP_HOST:  appConfigCopy.ClientNTPHost.String(),
+		UIT_CLIENT_PING_HOST: appConfigCopy.ClientPingHost.String(),
+		UIT_SERVER_HOSTNAME:  appConfigCopy.ServerHostname,
+		UIT_WEB_HTTP_HOST:    appConfigCopy.WebHTTPAddr.String(),
+		UIT_WEB_HTTP_PORT:    strconv.FormatUint(uint64(appConfigCopy.WebHTTPPort), 10),
+		UIT_WEB_HTTPS_HOST:   appConfigCopy.WebHTTPSAddr.String(),
+		UIT_WEB_HTTPS_PORT:   strconv.FormatUint(uint64(appConfigCopy.WebHTTPSPort), 10),
+		UIT_WEBMASTER_NAME:   appConfigCopy.WebmasterName,
+		UIT_WEBMASTER_EMAIL:  appConfigCopy.WebmasterEmail,
 	}
 	return clientConfig, nil
 }
 
 func GetTLSCertFiles() (certFile string, keyFile string, err error) {
-	appState, err := GetAppState()
+	ac, err := GetAppConfig()
 	if err != nil {
-		return "", "", fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return "", "", fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	appConfig := appState.appConfig.Load()
-	if appConfig == nil {
-		return "", "", fmt.Errorf("%w: app config is not loaded in GetTLSCertFiles", types.CannotGetAppStateError)
-	}
-	return appConfig.WebTLSCertFile, appConfig.WebTLSKeyFile, nil
+	return ac.WebTLSCertFile, ac.WebTLSKeyFile, nil
 }
 
 func GetAllowedLANIPs() ([]netip.Prefix, error) {
-	appState, err := GetAppState()
+	ac, err := GetAppConfig()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+		return nil, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
 	var allowedIPs []netip.Prefix
-	appState.allowedLANIPs.Range(func(k, v any) bool {
+	ac.AllowedLANMap.Range(func(k, v any) bool {
 		ipRangePtr, ok := k.(*netip.Prefix)
 		if !ok || ipRangePtr == nil {
 			return true
@@ -593,292 +239,4 @@ func GetAllowedLANIPs() ([]netip.Prefix, error) {
 		return true
 	})
 	return allowedIPs, nil
-}
-
-func GetLiveImage(tag int64) ([]byte, error) {
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return nil, types.CreateInvalidFieldError("tagnumber", err)
-	}
-
-	as.ClientRealtimeDataMu.RLock()
-	if len(as.ClientRealtimeData) == 0 {
-		as.ClientRealtimeDataMu.RUnlock()
-		return nil, fmt.Errorf("live image map not initialized")
-	}
-
-	val, ok := as.ClientRealtimeData[tag]
-	if !ok {
-		as.ClientRealtimeDataMu.RUnlock()
-		return nil, fmt.Errorf("%w: live image not found for tag %d", types.LiveImageMissingError, tag)
-	}
-
-	// fmt.Printf("Retrieved live image for tag %d, size: %.2fMB\n", tag, float64(len(val.LiveImageBytes))/1024/1024)
-	liveImage := val.LiveImageBytes
-	if len(liveImage) == 0 {
-		as.ClientRealtimeDataMu.RUnlock()
-		// return nil, fmt.Errorf("live image bytes are nil for tag %d", tag)
-		return nil, nil
-	}
-	if len(liveImage) == 0 || len(liveImage) > types.MaxLiveImageBytes {
-		as.ClientRealtimeDataMu.RUnlock()
-		return nil, fmt.Errorf("size of live image is out of range: %.2fMB", float64(len(liveImage))/1024/1024)
-	}
-
-	// Copy the bytes
-	imageCopy := make([]byte, len(liveImage))
-	copy(imageCopy, liveImage)
-	// Release the lock after copying the live image bytes in case live image is being updated concurrently
-	as.ClientRealtimeDataMu.RUnlock()
-	return imageCopy, nil
-	// as.ClientRealtimeDataMu.RUnlock()
-	// return liveImage, nil
-}
-
-func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return types.CreateInvalidFieldError("tagnumber", err)
-	}
-	if len(imageBytes) <= 0 || len(imageBytes) > types.MaxLiveImageBytes {
-		return fmt.Errorf("size of live image is out of range: %.2fMB", float64(len(imageBytes))/1024/1024)
-	}
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	// Store a copy
-	newImage := make([]byte, len(imageBytes))
-	copy(newImage, imageBytes)
-	as.ClientRealtimeDataMu.Lock()
-	defer as.ClientRealtimeDataMu.Unlock()
-	// fmt.Printf("Updating live image for tag %d, size: %.2fMB\n", tag, float64(len(newImage))/1024/1024)
-	clientData := as.ClientRealtimeData[tag]
-	clientData.Tagnumber = tag
-	clientData.LiveImageBytes = newImage
-	as.ClientRealtimeData[tag] = clientData
-	return nil
-}
-
-// Retrieves the clientUUID field from the ClientRealtimeData map for the given tag
-func GetRealtimeClientUUID(tag int64) (uuid.UUID, error) {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return uuid.Nil, types.CreateInvalidFieldError("tagnumber", err)
-	}
-
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return uuid.Nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	as.ClientRealtimeDataMu.RLock()
-	defer as.ClientRealtimeDataMu.RUnlock()
-	clientData, ok := as.ClientRealtimeData[tag]
-	if !ok {
-		return uuid.Nil, types.ErrClientNotFound
-	}
-	return clientData.ClientUUID, nil
-}
-
-// Updates the clientUUID field in the ClientRealtimeData map for the given tag
-func SetRealtimeClientUUID(tag int64, uuid uuid.UUID) error {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return types.CreateInvalidFieldError("tagnumber", err)
-	}
-
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	as.ClientRealtimeDataMu.Lock()
-	defer as.ClientRealtimeDataMu.Unlock()
-	clientData := as.ClientRealtimeData[tag]
-	clientData.Tagnumber = tag
-	clientData.ClientUUID = uuid
-	as.ClientRealtimeData[tag] = clientData
-	return nil
-}
-
-func UpdateClientLastHeard(tag int64, lastHeard *time.Time) error {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return types.CreateInvalidFieldError("tagnumber", err)
-	}
-	if lastHeard == nil || lastHeard.IsZero() {
-		return fmt.Errorf("lastHeard is nil")
-	}
-
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	appState.ClientRealtimeDataMu.Lock()
-	defer appState.ClientRealtimeDataMu.Unlock()
-	clientData := appState.ClientRealtimeData[tag]
-	clientData.Tagnumber = tag
-	clientData.LastHeard = lastHeard
-	appState.ClientRealtimeData[tag] = clientData
-
-	return nil
-}
-
-func isClientOnline(clientData types.JobQueueRealtimeData) bool {
-	if clientData.LastHeard == nil || clientData.LastHeard.IsZero() {
-		return false
-	}
-	if clientData.LastHeard.Add(types.LastHeardTimeout).Before(time.Now()) {
-		return false
-	}
-	return true
-}
-
-func GetAllOnlineClients() (onlineClientTags []int64, err error) {
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	appState.ClientRealtimeDataMu.RLock()
-	defer appState.ClientRealtimeDataMu.RUnlock()
-
-	for tag := range appState.ClientRealtimeData {
-		if clientData, ok := appState.ClientRealtimeData[tag]; ok {
-			if isClientOnline(clientData) {
-				onlineClientTags = append(onlineClientTags, tag)
-			}
-		}
-	}
-	return onlineClientTags, nil
-}
-
-func GetRealtimeClientData(tag int64) (*types.JobQueueRealtimeData, error) {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return nil, types.CreateInvalidFieldError("tagnumber", err)
-	}
-
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	as.ClientRealtimeDataMu.RLock()
-	defer as.ClientRealtimeDataMu.RUnlock()
-	clientData, ok := as.ClientRealtimeData[tag]
-	if !ok {
-		return nil, fmt.Errorf("%w: live client data not found for tag %d", types.ErrClientNotFound, tag)
-	}
-	return &clientData, nil
-}
-
-func GetAllOnlineClientsData() (clientDataCopy map[int64]types.JobQueueRealtimeData, err error) {
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	appState.ClientRealtimeDataMu.RLock()
-	defer appState.ClientRealtimeDataMu.RUnlock()
-
-	// Create a copy of the map to avoid race conditions
-	clientDataCopy = make(map[int64]types.JobQueueRealtimeData, len(appState.ClientRealtimeData))
-	for tag, clientData := range appState.ClientRealtimeData {
-		if isClientOnline(clientData) {
-			clientDataCopy[tag] = clientData
-		}
-	}
-
-	return clientDataCopy, nil
-}
-
-func ClearOfflineLiveImageBytes() (entriesCleared int64, entriesSkipped int64, totalEntries int64) {
-	as, err := GetAppState()
-	if err != nil || as == nil {
-		return entriesCleared, entriesSkipped, totalEntries
-	}
-	now := time.Now()
-	as.ClientRealtimeDataMu.Lock()
-	defer as.ClientRealtimeDataMu.Unlock()
-	for tag, clientData := range as.ClientRealtimeData {
-		if len(clientData.LiveImageBytes) > 0 {
-			if clientData.LastHeard.IsZero() || clientData.LastHeard.Add(types.LastHeardTimeout).Before(now) {
-				clientData.LiveImageBytes = nil
-				as.ClientRealtimeData[tag] = clientData
-				atomic.AddInt64(&entriesCleared, 1)
-			} else {
-				atomic.AddInt64(&totalEntries, 1)
-			}
-		} else {
-			atomic.AddInt64(&entriesSkipped, 1)
-			atomic.AddInt64(&totalEntries, 1)
-		}
-	}
-	return entriesCleared, entriesSkipped, totalEntries
-}
-
-func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtimeData, err error) {
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-	appState.ClientRealtimeDataMu.RLock()
-	defer appState.ClientRealtimeDataMu.RUnlock()
-
-	// Create a copy of the map to avoid race conditions
-	clientDataCopy = make(map[int64]types.JobQueueRealtimeData, len(appState.ClientRealtimeData))
-	maps.Copy(clientDataCopy, appState.ClientRealtimeData)
-
-	return clientDataCopy, nil
-}
-
-func UpdateClientAppUptime(tag int64, duration time.Duration) error {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return types.CreateInvalidFieldError("tagnumber", err)
-	}
-
-	if duration < 0 {
-		return fmt.Errorf("app uptime cannot be negative: %v", duration)
-	}
-
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	appState.ClientRealtimeDataMu.Lock()
-	defer appState.ClientRealtimeDataMu.Unlock()
-
-	clientData := appState.ClientRealtimeData[tag]
-	clientData.Tagnumber = tag
-	clientData.AppUptime = duration
-	appState.ClientRealtimeData[tag] = clientData
-
-	return nil
-}
-
-func UpdateClientSystemUptime(tag int64, duration time.Duration) error {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return types.CreateInvalidFieldError("tagnumber", err)
-	}
-
-	if duration < 0 {
-		return fmt.Errorf("system uptime cannot be negative: %v", duration)
-	}
-
-	appState, err := GetAppState()
-	if err != nil || appState == nil {
-		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
-	}
-
-	appState.ClientRealtimeDataMu.Lock()
-	defer appState.ClientRealtimeDataMu.Unlock()
-
-	clientData := appState.ClientRealtimeData[tag]
-	clientData.Tagnumber = tag
-	clientData.SystemUptime = duration
-	appState.ClientRealtimeData[tag] = clientData
-
-	return nil
 }

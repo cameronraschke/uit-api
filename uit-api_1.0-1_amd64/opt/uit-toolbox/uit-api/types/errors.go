@@ -10,10 +10,13 @@ var (
 	ContextError              = errors.New("context error")
 	CannotGetAppStateError    = errors.New("cannot retrieve app state")
 	NilAppStateError          = errors.New("app state is nil")
+	NilAppConfigError         = errors.New("app config is nil")
 	MissingFieldError         = errors.New("required field is empty/nil")
 	InvalidFieldError         = errors.New("invalid field value")
 	InvalidStructureError     = errors.New("invalid structure")
 	ErrFailedToUpdateAppState = errors.New("failed to update app state")
+	ErrTooManyAuthSessions    = errors.New("auth session limit reached")
+	NilRateLimitersError      = errors.New("rate limiters are nil/uninitialized")
 
 	// Client errors
 	ErrFailedToUpdateRealtimeData = errors.New("failed to update realtime data")

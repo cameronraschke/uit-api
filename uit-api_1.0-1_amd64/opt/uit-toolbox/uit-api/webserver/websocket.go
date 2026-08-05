@@ -5,7 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"uit-api/config"
+	"uit-api/logger"
 
 	"golang.org/x/net/websocket"
 )
@@ -17,7 +17,7 @@ func EchoServer(ws *websocket.Conn) {
 
 // This example demonstrates a trivial echo server.
 func StartWebSocket(ctx context.Context) error {
-	log := config.GetLogger().With(slog.String("func", "StartWebSocket"))
+	log := logger.GetLogger().With(slog.String("func", "StartWebSocket"))
 	http.Handle("/ws", websocket.Handler(EchoServer))
 	log.Info("Starting WebSocket server...")
 	err := http.ListenAndServe(":1411", nil)

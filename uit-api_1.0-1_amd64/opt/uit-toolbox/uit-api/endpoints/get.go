@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"uit-api/appstate"
 	"uit-api/config"
 	"uit-api/database"
-	"uit-api/middleware"
 	"uit-api/types"
 
 	"github.com/google/uuid"
@@ -47,29 +47,29 @@ func decodeMaybeBase64URLJSON(raw string) ([]byte, error) {
 
 // Per-client functions
 func GetServerTime(w http.ResponseWriter, req *http.Request) {
-	format := middleware.GetStrQuery(req.URL.Query(), "format")
+	format := GetStrQuery(req.URL.Query(), "format")
 	var curTime string
 	if format == "unix" {
 		curTime = time.Now().Format(time.UnixDate)
 	} else {
 		curTime = time.Now().Format(time.RFC3339)
 	}
-	middleware.WriteJson(w, http.StatusOK, ServerTime{Time: curTime})
+	WriteJson(w, http.StatusOK, ServerTime{Time: curTime})
 }
 
 func GetClientIDs(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetClientIDs"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "GetClientIDs"))
 
 	// Need either tag or serial, tag is preferred if both are provided
-	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	tagnumber := GetInt64Query(req.URL.Query(), "tagnumber")
 	tagErr := types.IsTagnumberInt64Valid(tagnumber)
 
-	systemSerial := middleware.GetStrQuery(req.URL.Query(), "system_serial")
+	systemSerial := GetStrQuery(req.URL.Query(), "system_serial")
 	serialErr := types.IsSystemSerialValid(systemSerial)
 
 	if tagErr != nil && serialErr != nil {
 		log.Warn(fmt.Sprintf("Both tag (%d) and serial (%s) are invalid or missing", tagnumber, systemSerial))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -78,53 +78,53 @@ func GetClientIDs(w http.ResponseWriter, req *http.Request) {
 	clientLookup, clientLookupErr = database.ClientIDLookup(req.Context(), tagnumber, systemSerial)
 	if clientLookupErr != nil {
 		log.Warn("error during client lookup: " + clientLookupErr.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, clientLookup)
+	WriteJson(w, http.StatusOK, clientLookup)
 }
 
 func GetAllClientIDs(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetAllClientIDs"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "GetAllClientIDs"))
 
 	clientIDs, err := database.SelectAllIDs(req.Context())
 	if err != nil {
 		log.Warn("error during client IDs lookup: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, clientIDs)
+	WriteJson(w, http.StatusOK, clientIDs)
 }
 
 // func GetBiosData(w http.ResponseWriter, req *http.Request) {
 // 	ctx := req.Context()
-// 	log := middleware.GetLoggerFromContext(ctx)
+// 	log := GetLoggerFromContext(ctx)
 // 	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
 // 	if err != nil || tagnumber == nil {
 // 		log.Warn("Invalid tagnumber provided in GetBiosData: " + err.Error())
-// 		middleware.WriteJsonError(w, http.StatusBadRequest)
+// 		WriteJsonError(w, http.StatusBadRequest)
 // 		return
 // 	}
 
 // 	db, err := database.NewSelectRepo()
 // 	if err != nil {
 // 		log.Warn("Error creating select repository in GetBiosData: " + err.Error())
-// 		middleware.WriteJsonError(w, http.StatusInternalServerError)
+// 		WriteJsonError(w, http.StatusInternalServerError)
 // 		return
 // 	}
 
 // 	biosData, err := db.GetBiosData(ctx, tagnumber)
 // 	if err != nil {
 // 		log.Warn("Query error in GetBiosData: " + err.Error())
-// 		middleware.WriteJsonError(w, http.StatusInternalServerError)
+// 		WriteJsonError(w, http.StatusInternalServerError)
 // 		return
 // 	}
-// 	middleware.WriteJson(w, http.StatusOK, biosData)
+// 	WriteJson(w, http.StatusOK, biosData)
 // }
 
 func IsClientJobAvailable(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "IsClientJobAvailable"))
-	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "IsClientJobAvailable"))
+	tagnumber := GetInt64Query(req.URL.Query(), "tagnumber")
 	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
 	}
@@ -132,16 +132,16 @@ func IsClientJobAvailable(w http.ResponseWriter, req *http.Request) {
 	availableJobs, err := database.SelectIsClientJobAvailable(req.Context(), tagnumber)
 	if err != nil {
 		log.Warn("Query error in IsClientJobAvailable: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, availableJobs)
+	WriteJson(w, http.StatusOK, availableJobs)
 }
 
 func GetNotes(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetNotes"))
-	noteType := middleware.GetStrQuery(req.URL.Query(), "note_type")
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetNotes"))
+	noteType := GetStrQuery(req.URL.Query(), "note_type")
 	if strings.TrimSpace(noteType) == "" {
 		log.Info("No note_type provided, defaulting to 'general'")
 		defaultNoteType := "general"
@@ -151,66 +151,60 @@ func GetNotes(w http.ResponseWriter, req *http.Request) {
 	notesData, err := database.GetNotes(ctx, noteType)
 	if err != nil {
 		log.Warn(fmt.Sprintf("%v: %v", types.DatabaseQueryError, err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, notesData)
+	WriteJson(w, http.StatusOK, notesData)
 }
 
 func GetLocationFormData(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetLocationFormData"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "GetLocationFormData"))
 
-	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	tagnumber := GetInt64Query(req.URL.Query(), "tagnumber")
 	tagErr := types.IsTagnumberInt64Valid(tagnumber)
-	serial := middleware.GetStrQuery(req.URL.Query(), "system_serial")
+	serial := GetStrQuery(req.URL.Query(), "system_serial")
 	serialErr := types.IsSystemSerialValid(serial)
 	if tagErr != nil && serialErr != nil {
 		log.Warn("Missing/invalid tagnumber and system_serial provided")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	locationData, err := database.GetLocationFormData(req.Context(), tagnumber, serial)
 	if err != nil {
 		log.Warn("Query error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, locationData)
+	WriteJson(w, http.StatusOK, locationData)
 }
 
 func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetClientImagesManifest"))
-	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetClientImagesManifest"))
+	tagnumber := GetInt64Query(req.URL.Query(), "tagnumber")
 	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	appState, err := config.GetAppState()
-	if err != nil {
-		log.Warn("Error getting app state in GetClientImagesManifest: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
-	fileConstraints, err := appState.GetFileUploadConstraints()
+	fileConstraints, err := GetFileUploadConstraints()
 	if err != nil {
 		log.Warn("Error creating select repository in GetClientImagesManifest: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	imageManifests, err := database.GetClientImageManifestByTag(ctx, tagnumber)
 	if err != nil && err != sql.ErrNoRows {
 		log.Warn("Query error in GetClientImagesManifest: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if len(imageManifests) == 0 {
 		log.Warn("No image manifest data for client: " + fmt.Sprintf("%d", tagnumber))
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
@@ -422,36 +416,30 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 	// If all manifests were filtered out
 	if len(filteredImageManifests) == 0 {
 		log.Warn("No valid image manifests to return in GetClientImagesManifest for client: " + fmt.Sprintf("%d", tagnumber))
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	middleware.WriteJson(w, http.StatusOK, filteredImageManifests)
+	WriteJson(w, http.StatusOK, filteredImageManifests)
 }
 
 func GetImage(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetImage"))
-	appState, err := config.GetAppState()
-	if err != nil {
-		log.Warn("Error getting app state: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
-	fileConstraints, err := appState.GetFileUploadConstraints()
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetImage"))
+	fileConstraints, err := GetFileUploadConstraints()
 	if err != nil {
 		log.Error("Cannot retrieve FileConstraints: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// local filepath example: inventory-images/{tag}/{date --iso}-{uuid}.{file extension}
 	// incoming request url: /api/client/files/{tag}/{uuid}.{file extension}
-	fileUUID := middleware.GetStrQuery(req.URL.Query(), "file_uuid")
+	fileUUID := GetStrQuery(req.URL.Query(), "file_uuid")
 	if fileUUID == "" {
 		log.Warn("No image UUID provided in request to GetImage")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	imageUUID := strings.ToLower(fileUUID)
@@ -467,7 +455,7 @@ func GetImage(w http.ResponseWriter, req *http.Request) {
 	}
 	if imageUUID == "" {
 		log.Warn("No uuid provided in request")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -476,34 +464,34 @@ func GetImage(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Info("Image not found from UUID lookup: " + imageUUID + " " + err.Error())
-			middleware.WriteJsonError(w, http.StatusNotFound)
+			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
 		log.Info("Client image query error: " + imageUUID + " " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if imageManifest == nil {
 		log.Info("No image manifest data found for UUID: " + imageUUID)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if imageManifest.Hidden != nil && *imageManifest.Hidden {
 		log.Warn("Attempt to access hidden image: " + imageUUID)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if imageManifest.ClientUUID == nil || strings.TrimSpace(*imageManifest.ClientUUID) == "" {
 		log.Warn("Client UUID for image is nil or empty: " + imageUUID)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	if imageManifest.FileName == nil || strings.TrimSpace(*imageManifest.FileName) == "" {
 		log.Warn("File name for image is nil or empty: " + imageUUID)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	filePath := path.Join("/opt/inventory_images", *imageManifest.ClientUUID, *imageManifest.FileName)
@@ -512,11 +500,11 @@ func GetImage(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			log.Warn("Image not found on disk: " + imageUUID + " " + err.Error())
-			middleware.WriteJsonError(w, http.StatusNotFound)
+			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
 		log.Warn("Image cannot be opened: " + imageUUID + " " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	defer imageFile.Close()
@@ -527,21 +515,21 @@ func GetImage(w http.ResponseWriter, req *http.Request) {
 // Overview section
 func GetJobQueueTable(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetJobQueueTable"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetJobQueueTable"))
 
 	jobQueueTable, err := database.GetJobQueueTable(ctx)
 	if err != nil {
 		log.Warn("Query error (GetJobQueueTable): " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	middleware.WriteJson(w, http.StatusOK, jobQueueTable)
+	WriteJson(w, http.StatusOK, jobQueueTable)
 }
 
 func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetInventoryTableData"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetInventoryTableData"))
 	requestQueries := req.URL.Query()
 
 	filterOptions := new(types.InventoryAdvSearchOptions)
@@ -552,13 +540,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_location"))
 		if err != nil {
 			log.Warn("Error decoding filter_location: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, locationFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_location: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.Location = locationFilter
@@ -570,13 +558,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_building_room"))
 		if err != nil {
 			log.Warn("Error decoding filter_building_room: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, buildingRoomFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_building_room: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		if buildingRoomFilter.ParamValue != nil {
@@ -600,13 +588,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_system_manufacturer"))
 		if err != nil {
 			log.Warn("Error decoding filter_system_manufacturer: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, manufacturerFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_system_manufacturer: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.SystemManufacturer = manufacturerFilter
@@ -618,13 +606,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_system_model"))
 		if err != nil {
 			log.Warn("Error decoding filter_system_model: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, modelFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_system_model: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.SystemModel = modelFilter
@@ -636,13 +624,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_device_type"))
 		if err != nil {
 			log.Warn("Error decoding filter_device_type: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, deviceTypeFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_device_type: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.DeviceType = deviceTypeFilter
@@ -654,13 +642,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_department_name"))
 		if err != nil {
 			log.Warn("Error decoding filter_department_name: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, departmentFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_department_name: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.Department = departmentFilter
@@ -672,13 +660,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_ad_domain"))
 		if err != nil {
 			log.Warn("Error decoding filter_ad_domain: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, adDomainFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_ad_domain: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.ADDomain = adDomainFilter
@@ -690,13 +678,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_status"))
 		if err != nil {
 			log.Warn("Error decoding filter_status: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, statusFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_status: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.Status = statusFilter
@@ -708,13 +696,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_is_broken"))
 		if err != nil {
 			log.Warn("Error decoding filter_is_broken: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, isBrokenFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_is_broken: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.IsBroken = isBrokenFilter
@@ -726,13 +714,13 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		jsonValue, err := decodeMaybeBase64URLJSON(req.URL.Query().Get("filter_has_images"))
 		if err != nil {
 			log.Warn("Error decoding filter_has_images: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		err = json.Unmarshal(jsonValue, hasImagesFilter)
 		if err != nil {
 			log.Warn("Error parsing filter_has_images: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		filterOptions.HasImages = hasImagesFilter
@@ -743,7 +731,7 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 	inventoryTableData, err := database.GetInventoryTableData(ctx, filterOptions)
 	if err != nil {
 		log.Warn("Query error (GetInventoryTableData): " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if requestQueries.Get("csv") == "true" {
@@ -757,12 +745,12 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		csvBytes, err := database.ConvertClientInfoToCSV(ctx, tagArr)
 		if err != nil {
 			log.Warn("Error converting inventory table data to CSV in GetInventoryTableData: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		if csvBytes == nil || csvBytes.Len() == 0 {
 			log.Warn("No CSV data generated in GetInventoryTableData")
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -772,159 +760,159 @@ func GetInventoryTableData(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	} else {
-		middleware.WriteJson(w, http.StatusOK, inventoryTableData)
+		WriteJson(w, http.StatusOK, inventoryTableData)
 	}
 }
 
 func GetClientConfig(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx)
+	log := GetLoggerFromContext(ctx)
 
 	clientConfig, err := config.GetClientConfig()
 	if err != nil {
 		log.Warn("Error getting client config in GetClientConfig: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if req.URL.Query().Get("json") == "true" {
-		middleware.WriteJson(w, http.StatusOK, clientConfig)
+		WriteJson(w, http.StatusOK, clientConfig)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(clientConfig); err != nil {
 		log.Warn("Error encoding client config to JSON in GetClientConfig: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, clientConfig)
+	WriteJson(w, http.StatusOK, clientConfig)
 }
 
 func GetManufacturersAndModels(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetManufacturersAndModels"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetManufacturersAndModels"))
 
 	manufacturersAndModels, err := database.SelectAllManufacturersAndModels(ctx)
 	if err != nil {
 		log.Warn("Query error in SelectAllManufacturersAndModels: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, manufacturersAndModels)
+	WriteJson(w, http.StatusOK, manufacturersAndModels)
 }
 
 func GetAllDomains(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetAllDomains"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetAllDomains"))
 
 	domains, err := database.GetAllDomains(ctx)
 	if err != nil {
 		log.Warn("Query error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, domains)
+	WriteJson(w, http.StatusOK, domains)
 }
 
 func GetDepartments(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetDepartments"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetDepartments"))
 
 	departments, err := database.GetAllDepartments(ctx)
 	if err != nil {
 		log.Warn("Query error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, departments)
+	WriteJson(w, http.StatusOK, departments)
 }
 
 func GetAllJobs(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetAllJobs"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetAllJobs"))
 
 	allJobs, err := database.SelectAllJobs(ctx)
 	if err != nil {
 		log.Warn("Query error in SelectAllJobs: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, allJobs)
+	WriteJson(w, http.StatusOK, allJobs)
 }
 
 func GetAllLocations(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetAllLocations"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetAllLocations"))
 
 	allLocations, err := database.GetAllLocations(ctx)
 	if err != nil {
 		log.Warn(fmt.Sprintf("%v: %v", types.DatabaseQueryError, err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, allLocations)
+	WriteJson(w, http.StatusOK, allLocations)
 }
 
 func GetAllStatuses(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetAllStatuses"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetAllStatuses"))
 
 	allStatuses, err := database.GetAllStatuses(ctx)
 	if err != nil {
 		log.Warn("Query error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, allStatuses)
+	WriteJson(w, http.StatusOK, allStatuses)
 }
 
 func GetAllDeviceTypes(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetAllDeviceTypes"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetAllDeviceTypes"))
 
 	allDeviceTypes, err := database.GetAllDeviceTypes(ctx)
 	if err != nil {
 		log.Warn(fmt.Sprintf("%v: %v", types.DatabaseQueryError, err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, allDeviceTypes)
+	WriteJson(w, http.StatusOK, allDeviceTypes)
 }
 
 func FetchClientHardwareData(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientHardwareData"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientHardwareData"))
 	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
 	if err != nil {
 		log.Warn(fmt.Sprintf("%v: %v", types.InvalidRequestFieldError, err))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	clientOverview, err := database.GetClientHardwareOverview(ctx, *tagnumber)
 	if err != nil {
 		log.Warn("Query error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, clientOverview)
+	WriteJson(w, http.StatusOK, clientOverview)
 }
 
 func FetchClientJobQueuePosition(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientJobQueuePosition"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientJobQueuePosition"))
 
 	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
 	if err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	queuePosition, err := database.SelectJobQueuePosition(ctx, *tagnumber)
 	if err != nil {
 		log.Warn("DB error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -933,24 +921,24 @@ func FetchClientJobQueuePosition(w http.ResponseWriter, req *http.Request) {
 	}{
 		Position: &queuePosition,
 	}
-	middleware.WriteJson(w, http.StatusOK, returnedJson)
+	WriteJson(w, http.StatusOK, returnedJson)
 }
 
 func FetchClientJobName(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientJobName"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientJobName"))
 
 	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
 	if err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	jobName, err := database.GetJobName(ctx, *tagnumber)
 	if err != nil {
 		log.Warn("DB error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -964,17 +952,17 @@ func FetchClientJobName(w http.ResponseWriter, req *http.Request) {
 			return *jobName
 		}(),
 	}
-	middleware.WriteJson(w, http.StatusOK, returnedJson)
+	WriteJson(w, http.StatusOK, returnedJson)
 }
 
 func FetchFormattedJobName(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchFormattedJobName"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchFormattedJobName"))
 
 	jobName := strings.TrimSpace(req.URL.Query().Get("job_name"))
 	if jobName == "" {
 		log.Debug("Empty job_name provided")
-		middleware.WriteJson(w, http.StatusOK,
+		WriteJson(w, http.StatusOK,
 			struct {
 				JobNameFormatted string `json:"job_name_formatted"`
 			}{
@@ -987,11 +975,11 @@ func FetchFormattedJobName(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Warn("Job name not found")
-			middleware.WriteJsonError(w, http.StatusNotFound)
+			WriteJsonError(w, http.StatusNotFound)
 			return
 		} else {
 			log.Warn("DB error: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1006,31 +994,31 @@ func FetchFormattedJobName(w http.ResponseWriter, req *http.Request) {
 			return *jobNameFormatted
 		}(),
 	}
-	middleware.WriteJson(w, http.StatusOK, returnedJson)
+	WriteJson(w, http.StatusOK, returnedJson)
 }
 
 func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "DownloadLiveImage"))
-	tag := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "DownloadLiveImage"))
+	tag := GetInt64Query(req.URL.Query(), "tagnumber")
 
-	imageBytes, err := config.GetLiveImage(tag)
+	imageBytes, err := appstate.GetLiveImage(tag)
 	if err != nil {
 		log.Warn("Error getting live image: " + err.Error())
 		if errors.Is(err, types.LiveImageMissingError) {
-			middleware.WriteJsonError(w, http.StatusNotFound)
+			WriteJsonError(w, http.StatusNotFound)
 		} else {
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 		}
 		return
 	}
 	if len(imageBytes) == 0 {
 		// log.Warn("Requested live image is empty")
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	if len(imageBytes) == 0 {
 		log.Warn("Requested live image is too large")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	reader := bytes.NewReader(imageBytes)
@@ -1042,38 +1030,38 @@ func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
 
 func FetchAllBuildingsAndRooms(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchAllBuildingsAndRooms"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchAllBuildingsAndRooms"))
 
 	result, err := database.GetAllBuildingsAndRooms(ctx)
 	if err != nil {
 		log.Warn("Error fetching buildings and rooms: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, result)
+	WriteJson(w, http.StatusOK, result)
 }
 
 func InitClient(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "InitClient"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "InitClient"))
 
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Error reading request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var requestData types.ClientInitRequest
 	if err := json.Unmarshal(body, &requestData); err != nil {
 		log.Warn("Error unmarshalling request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	dto, err := requestData.ToDTO()
 	if err != nil {
 		log.Warn("Error converting request data to DTO: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -1082,22 +1070,22 @@ func InitClient(w http.ResponseWriter, req *http.Request) {
 	clientUUIDStr, err = database.InitClient(ctx, dto)
 	if err != nil {
 		log.Warn("Error initializing client: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if clientUUIDStr != nil && strings.TrimSpace(*clientUUIDStr) != "" {
 		log.Warn("New client inserted with serial number: " + *requestData.SystemSerial)
 	} else {
-		pgxPool, err := config.GetPGXPool()
+		pgxPool, err := database.GetPGXPool()
 		if err != nil {
 			log.Warn("Error getting pgx pool: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		clientUUID, err = database.GetClientUUIDBySerial(ctx, pgxPool, *requestData.SystemSerial)
 		if err != nil {
 			log.Warn("Error fetching client UUID by serial number: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1112,34 +1100,34 @@ func InitClient(w http.ResponseWriter, req *http.Request) {
 	if clientUUID != uuid.Nil {
 		returnedJson.ClientUUID = clientUUID.String()
 	}
-	middleware.WriteJson(w, http.StatusOK, returnedJson)
+	WriteJson(w, http.StatusOK, returnedJson)
 }
 
 func FetchCheckoutData(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FetchCheckoutData"))
-	tagnumber := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchCheckoutData"))
+	tagnumber := GetInt64Query(req.URL.Query(), "tagnumber")
 	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	checkoutData, err := database.SelectCheckoutData(ctx, tagnumber)
 	if err != nil {
 		log.Warn("Error fetching checkout data: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, checkoutData)
+	WriteJson(w, http.StatusOK, checkoutData)
 }
 
 func GetNewTransactionUUID(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetNewTransactionUUID"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "GetNewTransactionUUID"))
 	uuid, err := uuid.NewV7()
 	if err != nil {
 		log.Warn("Error generating new transaction UUID: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	returnedJson := struct {
@@ -1147,34 +1135,34 @@ func GetNewTransactionUUID(w http.ResponseWriter, req *http.Request) {
 	}{
 		TransactionUUID: uuid.String(),
 	}
-	middleware.WriteJson(w, http.StatusOK, returnedJson)
+	WriteJson(w, http.StatusOK, returnedJson)
 }
 
 func GetClientInfo(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "GetClientInfo"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetClientInfo"))
 	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
 	if err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	clientInfo, err := database.SelectClientInfo(ctx, *tagnumber)
 	if err != nil || clientInfo == nil {
 		log.Warn("Error fetching client info: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, clientInfo)
+	WriteJson(w, http.StatusOK, clientInfo)
 }
 
 func GetDiskImageNameByModel(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "GetDiskImageNameByModel"))
-	model := middleware.GetStrQuery(req.URL.Query(), "system_model")
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "GetDiskImageNameByModel"))
+	model := GetStrQuery(req.URL.Query(), "system_model")
 
 	if model == "" {
 		log.Warn("No system model provided in request to GetDiskImageNameByModel")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -1184,30 +1172,30 @@ func GetDiskImageNameByModel(w http.ResponseWriter, req *http.Request) {
 	diskImageResponse, err := database.SelectDiskImageByModel(req.Context(), diskImageRequest)
 	if err != nil {
 		log.Warn("Error fetching disk image name by model: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if diskImageResponse == nil {
 		log.Warn("No disk image name found for model: " + model)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if diskImageResponse.SystemModel == nil || strings.TrimSpace(*diskImageResponse.SystemModel) == "" {
 		log.Warn("Disk image system model is nil or empty for model: " + model)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if diskImageResponse.ImageName == nil || strings.TrimSpace(*diskImageResponse.ImageName) == "" {
 		log.Warn("Disk image name is nil or empty for model: " + model)
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	returnedJson := new(types.DiskImageNameResponse)
 	returnedJson.SystemModel = diskImageResponse.SystemModel
 	returnedJson.ImageName = diskImageResponse.ImageName
-	middleware.WriteJson(w, http.StatusOK, returnedJson)
+	WriteJson(w, http.StatusOK, returnedJson)
 }

@@ -8,14 +8,53 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
-	"uit-api/config"
+	"uit-api/auth"
 	"uit-api/types"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var (
+	stdLibDBPool atomic.Pointer[sql.DB]
+	pgxPool      atomic.Pointer[pgxpool.Pool]
+)
+
+func InitDatabasePools() error {
+	// Get DB credentials
+	dbConnectionInfo, err := GetDatabaseCredentials()
+	if err != nil {
+		return fmt.Errorf("failed to get database credentials: %w", err)
+	}
+
+	// Create DB connection
+	dbConn, err := NewDBConnection(dbConnectionInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create database connection: %w", err)
+	}
+	defer dbConn.Close()
+
+	pg, err := NewPGXPool(dbConnectionInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create pgx pool: %w", err)
+	}
+	defer pg.Close()
+
+	stdLibDBPool.Store(dbConn)
+
+	pgxPool.Store(pg)
+
+	// Create admin user
+	if err = CreateAdminUser(); err != nil {
+		return fmt.Errorf("failed to create admin user: %w", err)
+	}
+
+	return nil
+}
 
 func VerifyRowsAffected(result sql.Result, expectedRowCount int64) error {
 	rowsAffected, err := result.RowsAffected()
@@ -174,11 +213,11 @@ func ptrTimeToString(t *time.Time) string {
 }
 
 func CreateAdminUser() error {
-	db, err := config.GetDatabaseConn()
+	db, err := GetDatabasePool()
 	if err != nil {
 		return fmt.Errorf("error getting database connection in CreateAdminUser: %w", err)
 	}
-	adminUsername, adminPasswd, err := config.GetAdminCredentials()
+	adminUsername, adminPasswd, err := auth.GetAdminCredentials()
 	if err != nil {
 		return fmt.Errorf("failed to get admin credentials: %w", err)
 	}

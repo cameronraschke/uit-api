@@ -5,11 +5,11 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"time"
-	"uit-api/config"
+	"uit-api/logger"
 )
 
 func StartPprofServer(ctx context.Context) error {
-	log := config.GetLogger()
+	log := logger.GetLogger()
 	log.Info("Starting pprof server on localhost:6060...")
 
 	pprofServer := &http.Server{Addr: "localhost:6060", Handler: nil}

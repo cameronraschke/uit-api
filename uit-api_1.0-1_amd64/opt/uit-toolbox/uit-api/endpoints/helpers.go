@@ -1,4 +1,4 @@
-package middleware
+package endpoints
 
 import (
 	"context"
@@ -19,7 +19,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"uit-api/auth"
 	"uit-api/config"
+	"uit-api/logger"
 	"uit-api/types"
 
 	"github.com/google/uuid"
@@ -220,7 +222,7 @@ func GetNonceFromContext(ctx context.Context) (nonce string, ok bool) {
 	return nonce, ok
 }
 
-func withWebEndpointConfig(ctx context.Context, endpoint *config.WebEndpointConfig) (context.Context, error) {
+func withWebEndpointConfig(ctx context.Context, endpoint *types.WebEndpointConfig) (context.Context, error) {
 	if ctx == nil {
 		return ctx, errors.New("nil context in withWebEndpointConfig")
 	}
@@ -229,10 +231,10 @@ func withWebEndpointConfig(ctx context.Context, endpoint *config.WebEndpointConf
 	}
 	return context.WithValue(ctx, requestEndpointKey, *endpoint), nil
 }
-func GetWebEndpointConfigFromContext(ctx context.Context) (endpoint config.WebEndpointConfig, err error) {
-	endpoint, ok := ctx.Value(requestEndpointKey).(config.WebEndpointConfig)
+func GetWebEndpointConfigFromContext(ctx context.Context) (endpoint types.WebEndpointConfig, err error) {
+	endpoint, ok := ctx.Value(requestEndpointKey).(types.WebEndpointConfig)
 	if !ok {
-		return config.WebEndpointConfig{}, fmt.Errorf("web endpoint config not found in context")
+		return types.WebEndpointConfig{}, fmt.Errorf("web endpoint config not found in context")
 	}
 	return endpoint, nil
 }
@@ -359,7 +361,7 @@ func withLogger(ctx context.Context, logger *slog.Logger) (context.Context, erro
 func GetLoggerFromContext(ctx context.Context) *slog.Logger {
 	log, ok := ctx.Value(requestLoggerKey).(*slog.Logger)
 	if !ok {
-		log = config.GetLogger()
+		log = logger.GetLogger()
 	}
 	return log
 }
@@ -408,7 +410,7 @@ func UpdateAndGetAuthSession(requestAuthSession *types.AuthSession, extendTTL bo
 
 	*newAuthSession = mergedAuthSession
 
-	config.UpdateAuthSession(requestAuthSession.SessionID, newAuthSession)
+	auth.UpdateAuthSession(requestAuthSession.SessionID, newAuthSession)
 
 	return newAuthSession, nil
 }

@@ -1,4 +1,4 @@
-package config
+package logger
 
 import (
 	"bufio"
@@ -16,9 +16,13 @@ type LogBuffer struct {
 	Output   io.Writer
 }
 
+const (
+	logBufferSize = 64 * 1024 // 64KB default buffer size
+)
+
 func newLogBuffer(output io.Writer, capacity int) *LogBuffer {
 	if capacity <= 0 {
-		capacity = 64 * 1024 // Default to 64KB if capacity is not specified
+		capacity = logBufferSize // Use default buffer size if capacity is not specified
 	}
 	if output == nil {
 		output = io.Discard
@@ -119,7 +123,7 @@ func FlushLogBuffers() error {
 }
 
 func initLogBuffers() error {
-	StdoutBuffer.Store(newLogBuffer(os.Stdout, 64*1024)) // 64KB buffer for stdout
-	StderrBuffer.Store(newLogBuffer(os.Stderr, 64*1024)) // 64KB buffer for stderr
+	StdoutBuffer.Store(newLogBuffer(os.Stdout, logBufferSize)) // buffer for stdout
+	StderrBuffer.Store(newLogBuffer(os.Stderr, logBufferSize)) // buffer for stderr
 	return nil
 }

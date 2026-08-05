@@ -10,65 +10,66 @@ import (
 	"time"
 	"uit-api/config"
 	"uit-api/endpoints"
-	"uit-api/middleware"
+	"uit-api/logger"
+	"uit-api/types"
 )
 
 func StartWebServer(ctx context.Context) error {
-	log := config.GetLogger()
+	log := logger.GetLogger()
 
 	// https handlers and middleware chains
-	httpsBaseChain := middleware.NewChain(
-		middleware.StoreLoggerMiddleware,
-		middleware.PanicRecoveryMiddleware,
-		middleware.LimitRequestSizeMiddleware,
-		middleware.StoreClientIPMiddleware,
-		middleware.CheckIPBlockedMiddleware,
-		middleware.AllowIPRangeMiddleware("any"),
-		middleware.WebEndpointConfigMiddleware,
-		middleware.TLSMiddleware,
-		middleware.CheckHttpVersionMiddleware,
-		middleware.HTTPMethodMiddleware,
-		middleware.CheckValidURLMiddleware,
-		middleware.CheckHeadersMiddleware,
-		middleware.SetHeadersMiddleware,
-		middleware.CheckForRedirectsMiddleware,
+	httpsBaseChain := endpoints.NewChain(
+		endpoints.StoreLoggerMiddleware,
+		endpoints.PanicRecoveryMiddleware,
+		endpoints.LimitRequestSizeMiddleware,
+		endpoints.StoreClientIPMiddleware,
+		endpoints.CheckIPBlockedMiddleware,
+		endpoints.AllowIPRangeMiddleware("any"),
+		endpoints.WebEndpointConfigMiddleware,
+		endpoints.TLSMiddleware,
+		endpoints.CheckHttpVersionMiddleware,
+		endpoints.HTTPMethodMiddleware,
+		endpoints.CheckValidURLMiddleware,
+		endpoints.CheckHeadersMiddleware,
+		endpoints.SetHeadersMiddleware,
+		endpoints.CheckForRedirectsMiddleware,
 	)
 
 	httpsAPIBaseChain := httpsBaseChain.Append(
-		middleware.RateLimitMiddleware("api"),
-		middleware.APITimeoutMiddleware,
+		endpoints.RateLimitMiddleware("api"),
+		endpoints.APITimeoutMiddleware,
 	)
 
 	httpsWebBaseChain := httpsBaseChain.Append(
-		middleware.RateLimitMiddleware("web"),
-		middleware.APITimeoutMiddleware,
+		endpoints.RateLimitMiddleware("web"),
+		endpoints.APITimeoutMiddleware,
 	)
 
 	httpsAuthBaseChain := httpsBaseChain.Append(
-		middleware.RateLimitMiddleware("auth"),
-		middleware.APITimeoutMiddleware,
+		endpoints.RateLimitMiddleware("auth"),
+		endpoints.APITimeoutMiddleware,
 	)
 
 	// No allowedFilesMiddleware here, as API calls do not serve files
 	httpsFullAPIChain := httpsAPIBaseChain.Append(
-		middleware.CookieAuthMiddleware,
+		endpoints.CookieAuthMiddleware,
 	)
 
 	httpsFullAuthAPIChain := httpsAuthBaseChain.Append(
-		middleware.CookieAuthMiddleware,
+		endpoints.CookieAuthMiddleware,
 	)
 
 	httpsFullCookieAuthChain := httpsWebBaseChain.Append(
-		middleware.AllowedFilesMiddleware,
-		middleware.CookieAuthMiddleware,
+		endpoints.AllowedFilesMiddleware,
+		endpoints.CookieAuthMiddleware,
 	)
 
 	httpsFullLoginChain := httpsAuthBaseChain.Append(
-		middleware.AllowedFilesMiddleware,
+		endpoints.AllowedFilesMiddleware,
 	)
 
 	httpsFullLogoutChain := httpsAuthBaseChain.Append(
-		middleware.CookieAuthMiddleware,
+		endpoints.CookieAuthMiddleware,
 	)
 
 	httpsRouter := http.NewServeMux()
@@ -175,11 +176,11 @@ func StartWebServer(ctx context.Context) error {
 
 	log.Info("Starting HTTPS web server...")
 
-	as, err := config.GetAppState()
+	ac, err := config.GetAppConfig()
 	if err != nil {
-		return fmt.Errorf("failed to retrieve app state: %w", err)
+		return fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
-	apiTimeout := time.Duration(as.APIRequestTimeout.Load())
+	apiTimeout := ac.APIRequestTimeout
 	if apiTimeout <= 0 {
 		return fmt.Errorf("invalid API timeout value: %d", apiTimeout)
 	}

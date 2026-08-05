@@ -1,10 +1,11 @@
-package config
+package logger
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"sync/atomic"
 )
 
 type logLevelRangeHandler struct {
@@ -13,46 +14,13 @@ type logLevelRangeHandler struct {
 	maxLevel slog.Level
 }
 
-func newLevelRangeHandler(handler slog.Handler, minLevel slog.Level, maxLevel slog.Level) slog.Handler {
-	return &logLevelRangeHandler{handler: handler, minLevel: minLevel, maxLevel: maxLevel}
-}
+var (
+	appLoggerInstance atomic.Pointer[slog.Logger]
+)
 
-func (handler *logLevelRangeHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	if level < handler.minLevel || level > handler.maxLevel {
-		return false
-	}
-	return handler.handler.Enabled(ctx, level)
-}
-
-func (handler *logLevelRangeHandler) Handle(ctx context.Context, record slog.Record) error {
-	if record.Level < handler.minLevel || record.Level > handler.maxLevel {
-		return nil
-	}
-	return handler.handler.Handle(ctx, record)
-}
-
-func (handler *logLevelRangeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &logLevelRangeHandler{
-		handler:  handler.handler.WithAttrs(attrs),
-		minLevel: handler.minLevel,
-		maxLevel: handler.maxLevel,
-	}
-}
-
-func (handler *logLevelRangeHandler) WithGroup(name string) slog.Handler {
-	return &logLevelRangeHandler{
-		handler:  handler.handler.WithGroup(name),
-		minLevel: handler.minLevel,
-		maxLevel: handler.maxLevel,
-	}
-}
-
-func (as *AppState) initLogger() error {
-	if as == nil {
-		return fmt.Errorf("app state is nil in initLogger")
-	}
+func InitLogger() error {
 	// Set logger to nil initially
-	as.appLogger.Store(nil)
+	appLoggerInstance.Store(nil)
 
 	removeTime := func(groups []string, a slog.Attr) slog.Attr {
 		if a.Key == slog.TimeKey && len(groups) == 0 {
@@ -95,8 +63,54 @@ func (as *AppState) initLogger() error {
 	multiHandler := slog.NewMultiHandler(stdoutTextHandler, stderrTextHandler)
 	logger := slog.New(multiHandler)
 	slog.SetDefault(logger)
-	as.appLogger.Store(logger)
+	appLoggerInstance.Store(logger)
 	return nil
+}
+
+func GetLogger() *slog.Logger {
+	logger := appLoggerInstance.Load()
+	if logger == nil {
+		fmt.Fprintf(os.Stderr, "[ERROR] logger is nil in GetLogger, returning default logger")
+		newLogger := newDefaultLogger()
+		appLoggerInstance.Store(newLogger)
+		slog.SetDefault(newLogger)
+		return newLogger
+	}
+	return logger
+}
+
+func newLevelRangeHandler(handler slog.Handler, minLevel slog.Level, maxLevel slog.Level) slog.Handler {
+	return &logLevelRangeHandler{handler: handler, minLevel: minLevel, maxLevel: maxLevel}
+}
+
+func (handler *logLevelRangeHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	if level < handler.minLevel || level > handler.maxLevel {
+		return false
+	}
+	return handler.handler.Enabled(ctx, level)
+}
+
+func (handler *logLevelRangeHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Level < handler.minLevel || record.Level > handler.maxLevel {
+		return nil
+	}
+	return handler.handler.Handle(ctx, record)
+}
+
+func (handler *logLevelRangeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &logLevelRangeHandler{
+		handler:  handler.handler.WithAttrs(attrs),
+		minLevel: handler.minLevel,
+		maxLevel: handler.maxLevel,
+	}
+}
+
+func (handler *logLevelRangeHandler) WithGroup(name string) slog.Handler {
+	return &logLevelRangeHandler{
+		handler:  handler.handler.WithGroup(name),
+		minLevel: handler.minLevel,
+		maxLevel: handler.maxLevel,
+	}
 }
 
 func newDefaultLogger() *slog.Logger {
@@ -118,26 +132,5 @@ func newDefaultLogger() *slog.Logger {
 
 	multiHandler := slog.NewMultiHandler(stdoutTextHandler)
 	logger := slog.New(multiHandler)
-	return logger
-}
-
-// This is not a method of AppState because we want the most updated version of AppState to be used on every call
-func GetLogger() *slog.Logger {
-	as, err := GetAppState()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] unable to get AppState in func GetLogger, returning default logger: %v\n", err)
-		newLogger := newDefaultLogger()
-		slog.SetDefault(newLogger)
-		return newLogger
-	}
-	logger := as.appLogger.Load()
-	if logger == nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] logger is nil in GetLogger, using default logger")
-		newLogger := newDefaultLogger()
-		as.appLogger.Store(newLogger)
-		slog.SetDefault(newLogger)
-		return newLogger
-	}
-
 	return logger
 }

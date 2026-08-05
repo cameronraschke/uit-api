@@ -1,4 +1,4 @@
-package middleware
+package endpoints
 
 import (
 	"context"
@@ -16,7 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uit-api/auth"
 	"uit-api/config"
+	"uit-api/logger"
 	"uit-api/types"
 )
 
@@ -34,7 +36,7 @@ var weakCiphers = map[uint16]bool{
 func StoreLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		requestIpStr, _, _ := net.SplitHostPort(req.RemoteAddr)
-		appLogger := config.GetLogger()
+		appLogger := logger.GetLogger()
 		requestLogger := appLogger.WithGroup("request").With(
 			slog.String("method", req.Method),
 			slog.String("url", req.URL.String()),
@@ -80,13 +82,7 @@ func LimitRequestSizeMiddleware(next http.Handler) http.Handler {
 			WriteJsonError(w, http.StatusLengthRequired)
 			return
 		}
-		appState, err := config.GetAppState()
-		if err != nil {
-			log.Error("Error retrieving app state: " + err.Error())
-			WriteJsonError(w, http.StatusInternalServerError)
-			return
-		}
-		fileUploadConstraints, err := appState.GetFileUploadConstraints()
+		fileUploadConstraints, err := GetFileUploadConstraints()
 		if err != nil {
 			log.Error("Error retrieving file upload constraints: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
@@ -139,7 +135,7 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		if isBlocked, blockedUntil := config.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
+		if isBlocked, blockedUntil := auth.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
 			// log.Info(fmt.Sprintf("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil))
 			WriteJsonError(w, http.StatusForbidden)
 			return
@@ -163,7 +159,7 @@ func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handle
 				WriteJsonError(w, http.StatusInternalServerError)
 				return
 			}
-			allowed, _, err := config.IsIPAllowed(trafficSource, "", reqAddr)
+			allowed, _, err := auth.IsIPAllowed(trafficSource, "", reqAddr)
 			if err != nil {
 				log.Error("Cannot check if IP is allowed: " + err.Error())
 				WriteJsonError(w, http.StatusInternalServerError)
@@ -182,7 +178,7 @@ func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handle
 func WebEndpointConfigMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "WebEndpointConfigMiddleware"))
-		endpointConfigPtr, err := config.GetWebEndpointConfig(req.URL.Path)
+		endpointConfigPtr, err := GetWebEndpointConfig(req.URL.Path)
 		if err != nil {
 			log.Warn("Cannot retrieve endpoint config from context: " + err.Error())
 			WriteJsonError(w, http.StatusNotFound)
@@ -286,7 +282,7 @@ func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 				return
 			}
 
-			lt := config.ToLimiterType(limiterType)
+			lt := auth.ToLimiterType(limiterType)
 			if !lt.IsValid() {
 				log.Error("Invalid limiter type in middleware: " + limiterType)
 				WriteJsonError(w, http.StatusInternalServerError)
@@ -309,14 +305,13 @@ func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 func APITimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "APITimeoutMiddleware"))
-		as, err := config.GetAppState()
+		ac, err := config.GetAppConfig()
 		if err != nil {
-			log.Error("Failed to retrieve app state: " + err.Error())
+			log.Error("Failed to retrieve app config: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-
-		apiTimeout := time.Duration(as.APIRequestTimeout.Load())
+		apiTimeout := ac.APIRequestTimeout
 
 		ctx, cancel := context.WithTimeout(req.Context(), apiTimeout)
 		defer cancel()
@@ -327,14 +322,13 @@ func APITimeoutMiddleware(next http.Handler) http.Handler {
 func FileServerTimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "FileServerTimeoutMiddleware"))
-		as, err := config.GetAppState()
+		ac, err := config.GetAppConfig()
 		if err != nil {
-			log.Error("Failed to retrieve app state: " + err.Error())
+			log.Error("Failed to retrieve app config: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-
-		fileTimeout := time.Duration(as.FileRequestTimeout.Load())
+		fileTimeout := ac.FileRequestTimeout
 
 		ctx, cancel := context.WithTimeout(req.Context(), fileTimeout)
 		defer cancel()
@@ -439,13 +433,13 @@ func CheckValidURLMiddleware(next http.Handler) http.Handler {
 func CheckForRedirectsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "CheckForRedirectsMiddleware"))
-		endpointConfig, err := config.GetWebEndpointConfig(req.URL.Path)
+		endpointConfig, err := GetWebEndpointConfig(req.URL.Path)
 		if err != nil {
 			log.Warn("Error getting endpoint config in CheckForRedirectsMiddleware: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		redirectURL, err := config.GetWebEndpointRedirectURL(endpointConfig)
+		redirectURL, err := GetWebEndpointRedirectURL(endpointConfig)
 		if err != nil {
 			next.ServeHTTP(w, req)
 			return
@@ -617,7 +611,7 @@ func SetHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetHeadersMiddleware"))
 
-		endpointConfig, err := config.GetWebEndpointConfig(req.URL.Path)
+		endpointConfig, err := GetWebEndpointConfig(req.URL.Path)
 		if err != nil {
 			log.Warn("Cannot retrieve endpoint config from context: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
@@ -705,26 +699,26 @@ func AllowedFilesMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		fileRequested := filepath.Base(pathRequested)
-		endpointConfig, err := config.GetWebEndpointConfig(pathRequested)
+		endpointConfig, err := GetWebEndpointConfig(pathRequested)
 		if err != nil {
 			log.Warn("Error getting endpoint config in AllowedFilesMiddleware " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		endpointFilePath, err := config.GetWebEndpointFilePath(endpointConfig)
+		endpointFilePath, err := GetWebEndpointFilePath(endpointConfig)
 		if err != nil {
 			log.Warn("No file path configured for endpoint in AllowedFilesMiddleware: " + err.Error())
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		endpointType, err := config.GetWebEndpointType(endpointConfig)
+		endpointType, err := GetWebEndpointType(endpointConfig)
 		if err != nil || endpointType == "" {
 			log.Warn("No valid endpoint config for URL in AllowedFilesMiddleware: " + pathRequested + " " + err.Error())
 			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
 		if endpointType != "api" {
-			filePath, err := config.GetWebEndpointFilePath(endpointConfig)
+			filePath, err := GetWebEndpointFilePath(endpointConfig)
 			if err != nil || strings.TrimSpace(filePath) == "" {
 				log.Warn("No file path in context configured for AllowedFilesMiddleware: " + err.Error())
 				WriteJsonError(w, http.StatusNotFound)
@@ -934,16 +928,16 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 			// log.Debug("Authentication cookie '" + cookieName + "' is valid")
 		}
 
-		config.ClearExpiredAuthSessions()
+		auth.ClearExpiredAuthSessions()
 
-		currentSession, err := config.GetAuthSessionByID(uitSessionIDCookie.Value)
+		currentSession, err := auth.GetAuthSessionByID(uitSessionIDCookie.Value)
 		if err != nil {
 			log.Error("Error retrieving auth session: " + err.Error())
 			http.Redirect(w, req, redirectURL, http.StatusSeeOther)
 			return
 		}
 
-		sessionValid, err := config.IsAuthSessionValid(currentSession, reqAddr)
+		sessionValid, err := auth.IsAuthSessionValid(currentSession, reqAddr)
 		if err != nil || !sessionValid {
 			log.Error("Error validating auth session: " + err.Error())
 			http.Redirect(w, req, redirectURL, http.StatusSeeOther)
@@ -952,7 +946,7 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 
 		switch requestPath {
 		case "/logout":
-			config.DeleteAuthSessions([]string{uitSessionIDCookie.Value})
+			auth.DeleteAuthSessions([]string{uitSessionIDCookie.Value})
 			// Clear cookies
 			http.SetCookie(w, &http.Cookie{
 				Name:    "uit_session_id",
@@ -1003,7 +997,7 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 				http.Redirect(w, req, redirectURL, http.StatusSeeOther)
 				return
 			}
-			if err := config.UpdateAuthSession(uitSessionIDCookie.Value, updatedSession); err != nil {
+			if err := auth.UpdateAuthSession(uitSessionIDCookie.Value, updatedSession); err != nil {
 				log.Error("Error generating auth cookies for response: " + err.Error())
 				http.Redirect(w, req, redirectURL, http.StatusSeeOther)
 				return

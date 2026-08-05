@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"uit-api/config"
+	"uit-api/appstate"
+	"uit-api/auth"
 	"uit-api/database"
-	"uit-api/middleware"
 	"uit-api/types"
 	"unicode/utf8"
 
@@ -31,11 +31,11 @@ import (
 
 func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "WebAuthEndpoint"))
-	reqIP, err := middleware.GetRequestIPFromContext(ctx)
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "WebAuthEndpoint"))
+	reqIP, err := GetRequestIPFromContext(ctx)
 	if err != nil {
 		log.Warn("Cannot retrieve request IP from context: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -45,7 +45,7 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -53,19 +53,19 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	base64Decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(string(body)))
 	if err != nil {
 		log.Warn("Invalid base64 encoding: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(base64Decoded) == 0 {
 		log.Warn("Empty base64 data")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// Check if decoded base64 is valid UTF-8
 	if !types.IsPrintableUnicode(base64Decoded) {
 		log.Warn("Invalid UTF-8 in base64 data")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -73,7 +73,7 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	clientFormAuthData := new(types.LoginRequest)
 	if err := json.Unmarshal(base64Decoded, clientFormAuthData); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -81,7 +81,7 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	if utf8.RuneCountInString(clientFormAuthData.Username) != 0 || utf8.RuneCountInString(clientFormAuthData.Password) != 0 {
 		if err := ValidateAuthFormInputSHA256(clientFormAuthData.Username, clientFormAuthData.Password); err != nil {
 			log.Warn("Invalid username/password input: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 	}
@@ -90,24 +90,24 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	authenticated, err := CheckAuthCredentials(ctx, clientFormAuthData.Username, clientFormAuthData.Password, clientFormAuthData.TwoFactorCode)
 	if err != nil || !authenticated {
 		log.Info("Authentication failed: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusUnauthorized)
+		WriteJsonError(w, http.StatusUnauthorized)
 		return
 	}
 
-	authSession, err := config.CreateAuthSession(reqIP)
+	authSession, err := auth.CreateAuthSession(reqIP)
 	if err != nil {
 		log.Error("Cannot create auth session: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	sessionCount := config.GetAuthSessionCount()
+	sessionCount := auth.GetAuthSessionCount()
 	log.Info("New auth session created. Total sessions: " + strconv.Itoa(int(sessionCount)))
 
-	authSessionCookies, err := middleware.UpdateAndGetAuthSession(authSession, true)
+	authSessionCookies, err := UpdateAndGetAuthSession(authSession, true)
 	if err != nil {
 		log.Error("Cannot get auth cookies for response: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -121,393 +121,393 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	responseJson.ExpiresAt = time.Now().Add(types.AuthSessionTTL)
 	responseJson.TTL = types.AuthSessionTTL
 
-	middleware.WriteJson(w, http.StatusOK, responseJson)
+	WriteJson(w, http.StatusOK, responseJson)
 }
 
 func SetClientMemoryUsageKB(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientMemoryUsageKB"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientMemoryUsageKB"))
 
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var memInfoRequest types.MemoryDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &memInfoRequest); err != nil {
 		log.Warn(types.JSONUnmarshalError.Error() + ": " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	memoryData, err := memInfoRequest.ToDTO()
 	if err != nil {
 		log.Warn("Invalid memory data request: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData == nil {
 		log.Warn("Memory data request is nil after mapping to DTO")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData.TotalUsageKB <= 0 {
 		log.Warn("Invalid memory usage value")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientMemoryUsageKB(req.Context(), *memoryData); err != nil {
 		log.Error("Failed to update client memory usage: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientMemoryCapacityKB(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientMemoryCapacityKB"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientMemoryCapacityKB"))
 
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var memInfoRequest types.MemoryDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &memInfoRequest); err != nil {
 		log.Warn(types.JSONUnmarshalError.Error() + ": " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	memoryData, err := memInfoRequest.ToDTO()
 	if err != nil {
 		log.Warn("Invalid memory data request: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData == nil {
 		log.Warn("Memory data request is nil after mapping to DTO")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData.TotalCapacityKB <= 0 {
 		log.Warn("Invalid memory capacity value")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientMemoryCapacityKB(req.Context(), *memoryData); err != nil {
 		log.Error("Failed to update client memory capacity: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientCPUUsage(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUUsage"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUUsage"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var cpuDataRequest types.CPUDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &cpuDataRequest); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	cpuDTO, err := cpuDataRequest.ToDTO()
 	if err != nil {
 		log.Warn("Invalid CPU data request: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientCPUUsage(req.Context(), cpuDTO); err != nil {
 		log.Error("Failed to update client CPU usage: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientCPUMHz(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "SetClientCPUMHz"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientCPUMHz"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var cpuUpdateRequest types.CPUDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &cpuUpdateRequest); err != nil {
 		log.Warn(types.JSONUnmarshalError.Error() + ": " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	cpuData, err := cpuUpdateRequest.ToDTO()
 	if err != nil {
 		log.Warn("Invalid CPU data request: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientCPUMHz(ctx, cpuData); err != nil {
 		log.Error("Failed to update client CPU MHz: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientHealth(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientHealth"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientHealth"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
 		log.Warn("Invalid UTF-8 in request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var clientHealth types.ClientHealthUpdateRequest
 	if err := json.Unmarshal(requestBody, &clientHealth); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	partialDTO, err := clientHealth.ToDTO()
 	if err != nil {
 		log.Warn("Unable to map client health update: %w" + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	transactionUUID, err := uuid.NewV7()
 	if err != nil {
 		log.Error("Failed to generate transaction UUID: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if transactionUUID == uuid.Nil || transactionUUID.String() == "" {
 		log.Error("Generated transaction UUID is nil")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := database.UpdateClientHealthUpdate(req.Context(), transactionUUID, partialDTO); err != nil {
 		log.Error("database error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientCPUTemperature(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUTemperature"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUTemperature"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var cpuDataRequest types.CPUDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &cpuDataRequest); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	cpuData, err := cpuDataRequest.ToDTO()
 	if err != nil {
 		log.Warn("Invalid CPU data request: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientCPUTemperature(req.Context(), cpuData); err != nil {
 		log.Error("Failed to update client CPU temperature: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientNetworkUsage(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx)
+	log := GetLoggerFromContext(ctx)
 	log = log.With(slog.String("func", "SetClientNetworkUsage"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
 		log.Warn("Invalid UTF-8 in request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var networkData types.NetworkData
 	if err := json.Unmarshal(requestBody, &networkData); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(networkData.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if networkData.NetworkUsage == nil {
 		log.Warn("Request is missing network usage")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if networkData.LinkSpeed == nil {
 		log.Warn("Request is missing link speed")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	updateRepo, err := database.NewUpdateRepo()
 	if err != nil {
 		log.Error("No database connection available for updating client network usage")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if err := updateRepo.UpdateClientNetworkUsage(ctx, &networkData); err != nil {
 		log.Error("Failed to update client network usage: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientUptime(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx)
+	log := GetLoggerFromContext(ctx)
 	log = log.With(slog.String("func", "SetClientUptime"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
 		log.Warn("Invalid UTF-8 in request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var uptimeData types.ClientUptime
 	if err := json.Unmarshal(requestBody, &uptimeData); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(uptimeData.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if uptimeData.ClientAppUptime == 0 && uptimeData.SystemUptime == 0 {
 		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "uptime data", "both clientAppUptime and systemUptime have zero values"))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if uptimeData.ClientAppUptime != 0 {
 		clientAppUptime := uptimeData.ClientAppUptime.Duration()
-		if err := config.UpdateClientAppUptime(uptimeData.Tagnumber, clientAppUptime); err != nil {
+		if err := appstate.UpdateClientAppUptime(uptimeData.Tagnumber, clientAppUptime); err != nil {
 			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientAppUptime", err))
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	if uptimeData.SystemUptime != 0 {
 		systemUptime := uptimeData.SystemUptime.Duration()
-		if err := config.UpdateClientSystemUptime(uptimeData.Tagnumber, systemUptime); err != nil {
+		if err := appstate.UpdateClientSystemUptime(uptimeData.Tagnumber, systemUptime); err != nil {
 			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "systemUptime", err))
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
 
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "SetClientLastHeard"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientLastHeard"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
 		log.Warn("Invalid UTF-8 in request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var lastHeardData struct {
@@ -516,136 +516,130 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	}
 	if err := json.Unmarshal(requestBody, &lastHeardData); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// Check if tagnumber is valid
 	if err := types.IsTagnumberInt64Valid(lastHeardData.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	// Check if lastHeard is valid
 	if lastHeardData.LastHeard.IsZero() || lastHeardData.LastHeard.Unix() <= 0 {
 		log.Warn(fmt.Sprintf("%v '%s': %v", types.InvalidRequestFieldError, "lastHeard", "value is zero"))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if lastHeardData.LastHeard.UTC().After(time.Now().UTC().Add(1 * time.Minute)) {
 		log.Warn(fmt.Sprintf("%v '%s': %v", types.InvalidRequestFieldError, "lastHeard", "value is in the future"))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	clientUUID, err := config.GetRealtimeClientUUID(lastHeardData.Tagnumber)
+	clientUUID, err := appstate.GetRealtimeClientUUID(lastHeardData.Tagnumber)
 	if err != nil {
 		log.Info(fmt.Sprintf("error retrieving realtime data for tag '%d': %v", lastHeardData.Tagnumber, err))
 		if !errors.Is(err, types.ErrClientNotFound) && !errors.Is(err, types.ErrClientUUIDMissingError) {
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	if clientUUID == uuid.Nil || clientUUID.String() == "" {
-		pgxPool, err := config.GetPGXPool()
+		pgxPool, err := database.GetPGXPool()
 		if err != nil {
 			log.Error("No database connection available for updating client last heard")
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		clientUUID, err = database.GetClientUUIDByTag(ctx, pgxPool, lastHeardData.Tagnumber)
 		if err != nil {
 			log.Error(fmt.Sprintf("%v '%d': %v", types.ErrClientUUIDNotFoundInDB, lastHeardData.Tagnumber, err))
-			middleware.WriteJsonError(w, http.StatusNotFound)
+			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
 		log.Info(fmt.Sprintf("updating client UUID '%s' for tag '%d' from database", clientUUID.String(), lastHeardData.Tagnumber))
-		if err := config.SetRealtimeClientUUID(lastHeardData.Tagnumber, clientUUID); err != nil {
+		if err := appstate.SetRealtimeClientUUID(lastHeardData.Tagnumber, clientUUID); err != nil {
 			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientUUID", err))
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
 
 	lastHeard := lastHeardData.LastHeard.UTC()
-	if err := config.UpdateClientLastHeard(lastHeardData.Tagnumber, &lastHeard); err != nil {
+	if err := appstate.UpdateClientLastHeard(lastHeardData.Tagnumber, &lastHeard); err != nil {
 		log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "lastHeard", err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func UpdateClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "UpdateClientBatteryChargePcnt"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "UpdateClientBatteryChargePcnt"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
 		log.Warn("Empty request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
 		log.Warn("Invalid UTF-8 in request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	batteryData := new(types.BatteryDataRequest)
 	if err := json.Unmarshal(requestBody, batteryData); err != nil {
 		log.Warn("Cannot unmarshal JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := types.IsTagnumberInt64Valid(batteryData.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if batteryData.BatteryChargePcnt == nil {
 		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "batteryChargePcnt", "value is nil or zero"))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if *batteryData.BatteryChargePcnt < 0 || *batteryData.BatteryChargePcnt > 100 {
 		log.Warn("Battery percentage out of valid range (0-100)")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	updateRepo, err := database.NewUpdateRepo()
 	if err != nil {
 		log.Error(fmt.Sprintf("%v while updating '%s': %v", types.DatabaseConnError, "clientBatteryChargePcnt", err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if err := updateRepo.UpdateClientBatteryChargePcnt(ctx, batteryData.Tagnumber, batteryData.BatteryChargePcnt); err != nil {
 		log.Error(fmt.Sprintf("%v '%s': %v", types.FailedToUpdateDatabaseValueError, "clientBatteryChargePcnt", err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func InsertNewNote(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "InsertNewNote"))
-	appState, err := config.GetAppState()
-	if err != nil {
-		log.Warn("Cannot get app state in InsertNewNote: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
-	htmlFormConstraints, err := appState.GetFormConstraints()
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "InsertNewNote"))
+	htmlFormConstraints, err := GetFormConstraints()
 	if err != nil {
 		log.Error("Cannot retrieve HTMLFormConstraints: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	maxNoteJSONBytes := int64((htmlFormConstraints.GeneralNote.MaxFormBytes)*4 + 512)
@@ -657,23 +651,23 @@ func InsertNewNote(w http.ResponseWriter, req *http.Request) {
 	err = json.NewDecoder(req.Body).Decode(&newNote)
 	if err != nil {
 		log.Warn("Cannot decode note JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if newNote.NoteType == nil || newNote.NoteContent == nil {
 		log.Warn("Note type or content is nil, not inserting new note")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.ValidatePrintableStrLen(newNote.NoteType, 1, 64); err != nil {
 		log.Warn(types.CreateInvalidFieldErrorStr("note_type", err))
-		middleware.WriteJsonError(w, http.StatusRequestEntityTooLarge)
+		WriteJsonError(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 	if err := types.ValidatePrintableStrLen(newNote.NoteContent, 0, 32768); err != nil {
 		log.Warn(types.CreateInvalidFieldErrorStr("note_content", err))
-		middleware.WriteJsonError(w, http.StatusRequestEntityTooLarge)
+		WriteJsonError(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -682,36 +676,29 @@ func InsertNewNote(w http.ResponseWriter, req *http.Request) {
 	err = database.InsertNewNote(ctx, &curTime, newNote.NoteType, newNote.NoteContent)
 	if err != nil {
 		log.Error(fmt.Sprintf("%v '%s': %v", types.FailedToUpdateDatabaseValueError, "newNote", err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
+	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func InsertInventoryUpdate(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "InsertInventoryUpdate"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "InsertInventoryUpdate"))
 
-	// Parse inventory data
-	appState, err := config.GetAppState()
-	if err != nil {
-		log.Warn("Cannot get app state: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
-
-	htmlFormConstraints, err := appState.GetFormConstraints()
+	htmlFormConstraints, err := GetFormConstraints()
 	if err != nil {
 		log.Error("Cannot retrieve HTMLFormConstraints: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
+	// Parse inventory data
 	// JSON part
 	jsonFile, _, err := req.FormFile("json")
 	if err != nil {
 		log.Warn("Error retrieving JSON data provided in form: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	defer jsonFile.Close()
@@ -720,31 +707,31 @@ func InsertInventoryUpdate(w http.ResponseWriter, req *http.Request) {
 	jsonBytes, err := io.ReadAll(jsonReader)
 	if err != nil {
 		log.Warn("Error reading JSON data from form: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if int64(len(jsonBytes)) > htmlFormConstraints.InventoryForm.MaxJSONBytes {
 		log.Warn("JSON data in form exceeds maximum allowed size after reading")
-		middleware.WriteJsonError(w, http.StatusRequestEntityTooLarge)
+		WriteJsonError(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 
 	var inventoryUpdateReq types.InventoryUpdateRequest
 	if err := json.Unmarshal(jsonBytes, &inventoryUpdateReq); err != nil {
 		log.Warn("Cannot decode JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !utf8.Valid(jsonBytes) {
 		log.Warn("Invalid UTF-8 in JSON data")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	inventoryDomain, err := inventoryUpdateReq.ToDTO(htmlFormConstraints)
 	if err != nil {
 		log.Warn("Invalid inventory request payload: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -752,12 +739,12 @@ func InsertInventoryUpdate(w http.ResponseWriter, req *http.Request) {
 	transactionUUID, err := uuid.NewV7()
 	if err != nil {
 		log.Error("error generation a transaction UUID")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if transactionUUID == uuid.Nil {
 		log.Error("transaction UUID is nil")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -765,26 +752,26 @@ func InsertInventoryUpdate(w http.ResponseWriter, req *http.Request) {
 	inventoryData := inventoryDomain.ToLocationWriteModel(transactionUUID)
 	if err := database.InsertInventoryUpdate(ctx, transactionUUID, inventoryData); err != nil {
 		log.Error(fmt.Sprintf("%v '%s': %v", types.FailedToUpdateDatabaseValueError, "inventoryData", err))
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	clientHardwareData := inventoryDomain.ToHardwareWriteModel(transactionUUID)
 	if err := database.UpdateInventoryHardwareData(ctx, transactionUUID, clientHardwareData); err != nil {
 		log.Error("Failed to update inventory hardware info: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	clientHealthData := inventoryDomain.ToClientHealthWriteModel(transactionUUID)
 	if err := database.UpdateClientHealthUpdate(ctx, transactionUUID, clientHealthData); err != nil {
 		log.Error("Failed to update inventory health info: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	checkoutData := inventoryDomain.ToCheckoutWriteModel(transactionUUID)
 	if checkoutData != nil {
 		if err := database.InsertClientCheckoutsUpdate(ctx, transactionUUID, checkoutData); err != nil {
 			log.Error("Failed to update inventory checkout info: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -797,58 +784,51 @@ func InsertInventoryUpdate(w http.ResponseWriter, req *http.Request) {
 		Message:   "update successful",
 	}
 
-	middleware.WriteJson(w, http.StatusOK, jsonResponse)
+	WriteJson(w, http.StatusOK, jsonResponse)
 }
 
 func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "UploadClientImage"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "UploadClientImage"))
 
 	if req.Method != http.MethodPost {
 		log.Warn("Invalid method for image upload request: " + req.Method)
-		middleware.WriteJsonError(w, http.StatusMethodNotAllowed)
+		WriteJsonError(w, http.StatusMethodNotAllowed)
 		return
 	}
 
 	contentType := strings.TrimSpace(req.Header.Get("Content-Type"))
 	if !strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data") {
 		log.Warn("Invalid content type for image upload request: " + contentType)
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	queryValues := req.URL.Query()
 	if len(queryValues) != 1 || len(queryValues["tagnumber"]) != 1 || strings.TrimSpace(queryValues.Get("tagnumber")) == "" {
 		log.Warn("Image upload request requires exactly one query key to be populated: tagnumber")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	tag := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	tag := GetInt64Query(req.URL.Query(), "tagnumber")
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		log.Warn("Invalid tagnumber query parameter: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	appState, err := config.GetAppState()
-	if err != nil {
-		log.Warn("Cannot get app state: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
-
-	endpointConfig, err := config.GetWebEndpointConfig(req.URL.Path)
+	endpointConfig, err := GetWebEndpointConfig(req.URL.Path)
 	if err != nil {
 		log.Warn("Cannot get endpoint config from AppState for path: " + req.URL.Path + " - " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	maxAllowedUploadBytes := endpointConfig.MaxUploadSize
 	if maxAllowedUploadBytes == nil {
 		log.Error("Max upload size is not defined for endpoint path: " + req.URL.Path)
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	req.Body = http.MaxBytesReader(w, req.Body, *maxAllowedUploadBytes)
@@ -857,57 +837,57 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 	if err := req.ParseMultipartForm(*maxAllowedUploadBytes); err != nil {
 		if errors.Is(err, http.ErrNotMultipart) {
 			log.Warn("Request body is not multipart form data: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		if errors.Is(err, http.ErrMissingBoundary) {
 			log.Warn("Multipart form data missing boundary: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		}
 		if os.IsTimeout(err) {
 			log.Warn("Request timed out while reading multipart form: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusRequestTimeout)
+			WriteJsonError(w, http.StatusRequestTimeout)
 			return
 		}
 		if maxBytesErr, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			log.Warn("Request body too large: " + maxBytesErr.Error())
-			middleware.WriteJsonError(w, http.StatusRequestEntityTooLarge)
+			WriteJsonError(w, http.StatusRequestEntityTooLarge)
 			return
 		}
 		log.Warn("Cannot parse multipart form: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusRequestEntityTooLarge)
+		WriteJsonError(w, http.StatusRequestEntityTooLarge)
 		return
 	}
 	if req.MultipartForm != nil {
 		defer req.MultipartForm.RemoveAll()
 	}
 
-	fileUploadConstraints, err := appState.GetFileUploadConstraints()
+	fileUploadConstraints, err := GetFileUploadConstraints()
 	if err != nil {
 		log.Error("Cannot retrieve FileConstraints: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	clientLookupResult, err := database.ClientIDLookup(ctx, tag, "")
 	if err != nil {
 		log.Warn("Error looking up client ID for tag '" + strconv.FormatInt(tag, 10) + "': " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// File upload part of form:
 	if req.MultipartForm == nil || req.MultipartForm.File == nil {
 		log.Info("File upload part of image upload is nil")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	files := req.MultipartForm.File["files"]
 	if len(files) == 0 {
 		if req.MultipartForm.File["files"] == nil {
 			log.Info("No client images provided in request, exiting early")
-			middleware.WriteJsonError(w, http.StatusBadRequest)
+			WriteJsonError(w, http.StatusBadRequest)
 			return
 		} else {
 			files = req.MultipartForm.File["files"]
@@ -941,7 +921,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 	dbManifest, err := database.GetClientImageManifestByTag(ctx, tag)
 	if err != nil {
 		log.Error("Failed to get file hashes from tag '" + strconv.FormatInt(tag, 10) + "': " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -1055,7 +1035,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		fileUUID, err := uuid.NewV7()
 		if err != nil {
 			log.Error("Failed to generate file UUID for uploaded file '" + fileHeader.Filename + "': " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		fileUUIDStr := fileUUID.String()
@@ -1068,7 +1048,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		fileHash := crypto.SHA256.New()
 		if _, err := fileHash.Write(fileBytes); err != nil {
 			log.Error("Failed to compute hash of uploaded file '" + fileHeader.Filename + "': " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		shaSum := fileHash.Sum(nil)
@@ -1374,12 +1354,12 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		log.Info(fmt.Sprintf("Total uploaded files: %d, Total size of uploaded files: %.2f MB", fileUploadCount, float64(totalActualFileBytes)/1024/1024))
 	}
 
-	middleware.WriteJson(w, statusCode, summary)
+	WriteJson(w, statusCode, summary)
 }
 
 func TogglePinImage(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx)
+	log := GetLoggerFromContext(ctx)
 
 	// Decode JSON body
 	var body struct {
@@ -1388,157 +1368,157 @@ func TogglePinImage(w http.ResponseWriter, req *http.Request) {
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		log.Error("Cannot decode TogglePinImage JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	fileUUID := strings.TrimSpace(body.FileUUID)
 	if fileUUID == "" {
 		log.Warn("No image UUID provided in TogglePinImage body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if fileUUID == "" {
 		log.Warn("No image path provided for TogglePinImage body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	tagnumber := body.Tagnumber
 	if tagnumber < 1 || tagnumber > 999999 {
 		log.Warn("Invalid tag number provided in TogglePinImage body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.TogglePinImage(ctx, tagnumber, &fileUUID); err != nil {
 		log.Error("Failed to toggle pin image: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, "Image pin toggled successfully")
+	WriteJson(w, http.StatusOK, "Image pin toggled successfully")
 }
 
 func SetAllJobs(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetAllJobs"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetAllJobs"))
 
 	clientBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var clientJson types.JobQueueTableRowView
 	if err := json.Unmarshal(clientBody, &clientJson); err != nil {
 		log.Warn("Cannot decode JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if clientJson.JobName == nil || strings.TrimSpace(*clientJson.JobName) == "" {
 		log.Warn("Job name is missing")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) < 1 ||
 		utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) > 64 {
 		log.Warn("Invalid job name length")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableASCII([]byte(*clientJson.JobName)) {
 		log.Warn("Non-printable ASCII characters in job name field")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err = database.SetAllOnlineClientJobs(req.Context(), *clientJson.JobName); err != nil {
 		log.Error("Failed to set all jobs: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Message string `json:"response_status"`
 	}{Message: "All client jobs set successfully"})
 }
 
 func SetClientJob(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientJob"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientJob"))
 
 	clientBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var clientJson types.JobQueueTableRowView
 	if err := json.Unmarshal(clientBody, &clientJson); err != nil {
 		log.Warn("Cannot decode JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := types.IsTagnumberInt64Valid(clientJson.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// Job name checks
 	if clientJson.JobName == nil || strings.TrimSpace(*clientJson.JobName) == "" {
 		log.Warn("Job name is missing")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) < 1 ||
 		utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) > 64 {
 		log.Warn("Invalid job name length")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableASCII([]byte(*clientJson.JobName)) {
 		log.Warn("Non-printable ASCII characters in job name field")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err = database.SetClientJob(req.Context(), clientJson.Tagnumber, *clientJson.JobName); err != nil {
 		log.Error("Failed to set client job: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Message string `json:"response_status"`
 	}{Message: "Client job set successfully"})
 }
 
 func UpdateClientHealthCheck(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "UpdateClientHealthCheck"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "UpdateClientHealthCheck"))
 
 	clientBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var hardwareCheckData types.ClientHealthCheck
 	if err := json.Unmarshal(clientBody, &hardwareCheckData); err != nil {
 		log.Warn("Cannot decode JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(hardwareCheckData.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	// if hardwareCheckData.LastHardwareCheck == nil || hardwareCheckData.LastHardwareCheck.IsZero() {
 	// 	log.Warn("Last hardware check time is missing or zero")
-	// 	middleware.WriteJsonError(w, http.StatusBadRequest)
+	// 	WriteJsonError(w, http.StatusBadRequest)
 	// 	return
 	// }
 	if hardwareCheckData.LastHardwareCheck != nil {
@@ -1548,47 +1528,47 @@ func UpdateClientHealthCheck(w http.ResponseWriter, req *http.Request) {
 
 	if err = database.UpsertClientHealthCheck(ctx, &hardwareCheckData); err != nil {
 		log.Error("Failed to update client last hardware check: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, "Client last hardware check updated successfully")
+	WriteJson(w, http.StatusOK, "Client last hardware check updated successfully")
 }
 
 func SetClientHardwareData(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "SetClientHardwareData"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientHardwareData"))
 	clientBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body for SetClientHardwareData: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var hardwareData *types.ClientHardwareView
 	if err := json.Unmarshal(clientBody, &hardwareData); err != nil {
 		log.Warn("Cannot decode SetClientHardwareData JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(hardwareData.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if hardwareData.SystemSerial == nil || strings.TrimSpace(*hardwareData.SystemSerial) == "" {
 		log.Warn("System serial number is missing or empty in SetClientHardwareData")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if hardwareData == nil {
 		log.Warn("Empty hardware data provided in SetClientHardwareData")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if strings.TrimSpace(hardwareData.TransactionUUID) == "" {
 		log.Warn("Transaction UUID is missing or nil in SetClientHardwareData")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if hardwareData.BatteryManufactureDate != nil {
@@ -1609,81 +1589,81 @@ func SetClientHardwareData(w http.ResponseWriter, req *http.Request) {
 	}
 	if err := database.UpdateClientHardwareData(ctx, hardwareData); err != nil {
 		log.Error("Failed to update client hardware data: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, "Client hardware data updated successfully")
+	WriteJson(w, http.StatusOK, "Client hardware data updated successfully")
 }
 
 func SetJobQueuedAt(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "SetJobQueuedAt"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetJobQueuedAt"))
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Error reading request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var reqBody types.JobQueueTableRowView
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		log.Warn("Error unmarshaling request body" + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(reqBody.Tagnumber); err != nil {
 		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err))
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	db, err := database.NewUpdateRepo()
 	if err != nil {
 		log.Warn("Error creating DB connection" + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := db.UpdateJobQueuedAt(req.Context(), &reqBody); err != nil {
 		log.Warn("DB error: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	middleware.WritePlainTextResponse(w, "")
+	WritePlainTextResponse(w, "")
 }
 
 func UploadLiveImage(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "UploadLiveImage"))
-	tag := middleware.GetInt64Query(req.URL.Query(), "tagnumber")
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "UploadLiveImage"))
+	tag := GetInt64Query(req.URL.Query(), "tagnumber")
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	lr := &io.LimitedReader{R: req.Body, N: types.MaxLiveImageBytes + 1}
 	body, err := io.ReadAll(lr)
 	if err != nil {
 		log.Warn("Error reading request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(body) <= 0 {
 		log.Warn("Request body is empty")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if int64(len(body)) > types.MaxLiveImageBytes {
 		log.Warn("Request body is too large")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := config.UpdateLiveImageBytes(tag, body); err != nil {
+	if err := appstate.UpdateLiveImageBytes(tag, body); err != nil {
 		log.Warn("Error updating live image for " + strconv.Itoa(int(tag)) + ": " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Status string `json:"status"`
 	}{
 		Status: "success",
@@ -1692,41 +1672,41 @@ func UploadLiveImage(w http.ResponseWriter, req *http.Request) {
 
 func BulkUpdateInventoryLocation(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "BulkUpdateInventoryLocation"))
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "BulkUpdateInventoryLocation"))
 
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Cannot read request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var bulkUpdateReq types.BulkUpdateRequest
 	if err := json.Unmarshal(requestBody, &bulkUpdateReq); err != nil {
 		log.Warn("Cannot decode BulkUpdateInventoryLocation JSON: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if bulkUpdateReq.Location == nil || strings.TrimSpace(*bulkUpdateReq.Location) == "" || len(bulkUpdateReq.Tagnumbers) == 0 {
 		log.Warn("Bulk update request is invalid")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	transactionUUID, err := uuid.NewV7()
 	if err != nil {
 		log.Error("error generation a transaction UUID (BulkUpdateInventoryLocation)")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if transactionUUID == uuid.Nil {
 		log.Error("transaction UUID in BulkUpdateInventoryLocation is nil")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	transactionUUIDStr := transactionUUID.String()
 	updateRepo, err := database.NewUpdateRepo()
 	if err != nil {
 		log.Error("No database connection available for BulkUpdateInventoryLocation")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	for _, tagnumber := range bulkUpdateReq.Tagnumbers {
@@ -1736,11 +1716,11 @@ func BulkUpdateInventoryLocation(w http.ResponseWriter, req *http.Request) {
 		}
 		if err := updateRepo.BulkUpdateClientLocation(ctx, &transactionUUIDStr, tagnumber, bulkUpdateReq.Location); err != nil {
 			log.Error("Failed to bulk update inventory location: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 	}
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Status       string `json:"status"`
 		UpdatedCount int    `json:"updated_count"`
 	}{
@@ -1750,23 +1730,23 @@ func BulkUpdateInventoryLocation(w http.ResponseWriter, req *http.Request) {
 }
 
 func ReceiveWindowsClientInfo(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "ReceiveWindowsClientInfo"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "ReceiveWindowsClientInfo"))
 
 	if err := req.ParseMultipartForm(32 << 20); err != nil {
 		if os.IsTimeout(err) {
 			log.Warn("Request timed out while reading multipart form: " + err.Error())
-			middleware.WriteJsonError(w, http.StatusRequestTimeout)
+			WriteJsonError(w, http.StatusRequestTimeout)
 			return
 		}
 		log.Warn("Error parsing multipart form: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	jsonFile, _, err := req.FormFile("json_file")
 	if err != nil {
 		log.Warn("Error retrieving JSON data provided in form: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	defer jsonFile.Close()
@@ -1774,50 +1754,50 @@ func ReceiveWindowsClientInfo(w http.ResponseWriter, req *http.Request) {
 	bodyBytes, err := io.ReadAll(jsonFile)
 	if err != nil {
 		log.Warn("Error reading JSON file: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	bodyBytes = bytes.TrimSpace(bodyBytes)
 	bodyBytes = bytes.TrimPrefix(bodyBytes, []byte{0xEF, 0xBB, 0xBF}) // Trim UTF-8 BOM if present
 	if len(bodyBytes) == 0 {
 		log.Warn("JSON file is empty")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var requestData types.WindowsUpdateRequest
 	if err := json.Unmarshal(bodyBytes, &requestData); err != nil {
 		log.Warn("Error unmarshaling JSON file: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	dto, err := requestData.ToDTO()
 	if err != nil {
 		log.Warn("Error creating Windows update DTO: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	transactionUUID, err := uuid.NewV7()
 	if err != nil {
 		log.Error("error generation a transaction UUID: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if transactionUUID == uuid.Nil || transactionUUID.String() == "" {
 		log.Error("transaction UUID is nil")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := database.UpdateFromWindowsJSON(req.Context(), dto, transactionUUID); err != nil {
 		log.Error("Failed to update Windows client info: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Status int64  `json:"tagnumber"`
 		Serial string `json:"system_serial"`
 	}{
@@ -1827,33 +1807,33 @@ func ReceiveWindowsClientInfo(w http.ResponseWriter, req *http.Request) {
 }
 
 func UpdateJobStats(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "UpdateJobStats"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "UpdateJobStats"))
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Error reading request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var reqBody types.UpdateJobStatsRequest
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		log.Warn("Error unmarshaling request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	dto, err := reqBody.ToDTO()
 	if err != nil {
 		log.Warn("Error converting request body to DTO: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertJobStats(req.Context(), dto); err != nil {
 		log.Error("Failed to update job stats: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Status string `json:"status"`
 	}{
 		Status: "success",
@@ -1861,31 +1841,31 @@ func UpdateJobStats(w http.ResponseWriter, req *http.Request) {
 }
 
 func StoreBulkUpdateData(w http.ResponseWriter, req *http.Request) {
-	log := middleware.GetLoggerFromContext(req.Context()).With(slog.String("func", "StoreBulkUpdateData"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "StoreBulkUpdateData"))
 
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warn("Error reading request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var reqBody types.BulkUpdateRequest
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		log.Warn("Error unmarshaling request body: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if reqBody.SessionID == nil || strings.TrimSpace(*reqBody.SessionID) == "" {
 		log.Warn("Missing session ID in request body")
-		middleware.WriteJsonError(w, http.StatusBadRequest)
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	authSession, err := config.GetAuthSessionByID(*reqBody.SessionID)
+	authSession, err := auth.GetAuthSessionByID(*reqBody.SessionID)
 	if err != nil {
 		log.Error("Failed to get auth session: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -1899,25 +1879,25 @@ func StoreBulkUpdateData(w http.ResponseWriter, req *http.Request) {
 		Tagnumbers: reqBody.Tagnumbers,
 		Location:   reqBody.Location,
 	})
-	if err := config.UpdateAuthSession(*reqBody.SessionID, newAuthSession); err != nil {
+	if err := auth.UpdateAuthSession(*reqBody.SessionID, newAuthSession); err != nil {
 		log.Error("Failed to update auth session: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// dto, err := reqBody.ToDTO()
 	// if err != nil {
 	// 	log.Warn("Error converting request body to DTO: " + err.Error())
-	// 	middleware.WriteJsonError(w, http.StatusBadRequest)
+	// 	WriteJsonError(w, http.StatusBadRequest)
 	// 	return
 	// }
 
 	// if err := database.StoreBulkUpdateData(req.Context(), dto); err != nil {
 	// 	log.Error("Failed to store bulk update data: " + err.Error())
-	// 	middleware.WriteJsonError(w, http.StatusInternalServerError)
+	// 	WriteJsonError(w, http.StatusInternalServerError)
 	// 	return
 	// }
-	middleware.WriteJson(w, http.StatusOK, struct {
+	WriteJson(w, http.StatusOK, struct {
 		Status BulkUpdateAttributes `json:"bulk_update_session_data"`
 	}{
 		Status: BulkUpdateAttributes{

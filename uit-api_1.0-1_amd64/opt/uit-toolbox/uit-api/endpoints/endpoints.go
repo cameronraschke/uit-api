@@ -17,7 +17,6 @@ import (
 	"strings"
 	"uit-api/config"
 	"uit-api/database"
-	"uit-api/middleware"
 	"uit-api/types"
 	"unicode/utf8"
 
@@ -93,24 +92,24 @@ func CheckAuthCredentials(ctx context.Context, username string, password string,
 
 func FileServerHandler(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "FileServerHandler"))
-	resolvedPath, err := middleware.GetRequestFileFromContext(ctx)
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "FileServerHandler"))
+	resolvedPath, err := GetRequestFileFromContext(ctx)
 	if err != nil {
 		log.Warn("error retrieving requested file from context: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// Previous path and file validation done in middleware
 	if ctx.Err() != nil {
 		log.Warn("context error before opening file '" + resolvedPath + "': " + ctx.Err().Error())
-		middleware.WriteJsonError(w, http.StatusRequestTimeout)
+		WriteJsonError(w, http.StatusRequestTimeout)
 		return
 	}
 	requestedFile, err := os.Open(resolvedPath)
 	if err != nil {
 		log.Warn("error opening file '" + resolvedPath + "': " + err.Error())
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	defer requestedFile.Close()
@@ -118,7 +117,7 @@ func FileServerHandler(w http.ResponseWriter, req *http.Request) {
 	metadata, err := requestedFile.Stat()
 	if err != nil {
 		log.Error("error retrieving file metadata for '" + resolvedPath + "': " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -126,12 +125,12 @@ func FileServerHandler(w http.ResponseWriter, req *http.Request) {
 	// 	if endpointConfig.MaxDownloadSizeMB != 0 {
 	// 		if metadata.Size() > endpointConfig.MaxDownloadSizeMB {
 	// 			log.Warn("Requested file is too large (FileServerHandler): '" + resolvedPath + "' (" + fmt.Sprintf("%.2f", float64(metadata.Size())/1024/1024) + " MB, max allowed: " + fmt.Sprintf("%d", endpointConfig.MaxDownloadSizeMB) + " MB)")
-	// 			middleware.WriteJsonError(w, http.StatusRequestEntityTooLarge)
+	// 			WriteJsonError(w, http.StatusRequestEntityTooLarge)
 	// 			return
 	// 		}
 	// 	} else {
 	// 		log.Warn("Max download size is not set for static file endpoint (FileServerHandler): '" + resolvedPath + "', rejecting request")
-	// 		middleware.WriteJsonError(w, http.StatusInternalServerError)
+	// 		WriteJsonError(w, http.StatusInternalServerError)
 	// 		return
 	// 	}
 	// }
@@ -177,44 +176,44 @@ func FileServerHandler(w http.ResponseWriter, req *http.Request) {
 
 func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx).With(slog.String("func", "WebServerHandler"))
-	requestedPath, err := middleware.GetRequestPathFromContext(ctx)
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "WebServerHandler"))
+	requestedPath, err := GetRequestPathFromContext(ctx)
 	if err != nil {
 		log.Warn("Error retrieving URL stored in context for WebServerHandler: " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	endpointConfig, err := config.GetWebEndpointConfig(requestedPath)
+	endpointConfig, err := GetWebEndpointConfig(requestedPath)
 	if err != nil {
 		log.Warn("cannot get endpoint config for endpoint '" + requestedPath + "': " + err.Error() + "")
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 
 	if endpointConfig.EndpointType != "text_content" && endpointConfig.EndpointType != "media_content" && endpointConfig.EndpointType != "static_file" {
 		log.Warn(fmt.Sprintf("endpoint of type '%s' is not allowed to be served by WebServerHandler", endpointConfig.EndpointType))
-		middleware.WriteJsonError(w, http.StatusForbidden)
+		WriteJsonError(w, http.StatusForbidden)
 		return
 	}
 
 	// log.Debug("Web request from " + requestIP.String() + " for " + requestedPath)
 
-	filePath, err := config.GetWebEndpointFilePath(endpointConfig)
+	filePath, err := GetWebEndpointFilePath(endpointConfig)
 	if err != nil {
 		log.Warn("cannot get file path for endpoint '" + requestedPath + "': " + err.Error() + "")
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	// Open the file
 	if ctx.Err() != nil {
 		log.Warn("context error before opening file '" + filePath + "' for endpoint '" + requestedPath + "': " + ctx.Err().Error())
-		middleware.WriteJsonError(w, http.StatusRequestTimeout)
+		WriteJsonError(w, http.StatusRequestTimeout)
 		return
 	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Warn("cannot open file: '" + filePath + "': " + err.Error() + "")
-		middleware.WriteJsonError(w, http.StatusNotFound)
+		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
 	defer file.Close()
@@ -229,15 +228,15 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 	metadata, err := file.Stat()
 	if err != nil {
 		log.Warn("cannot stat file: '" + filePath + "': " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// Set headers
-	contentType, err := config.GetWebEndpointContentType(endpointConfig)
+	contentType, err := GetWebEndpointContentType(endpointConfig)
 	if err != nil {
 		log.Warn("cannot get content type for endpoint '" + requestedPath + "': " + err.Error())
-		middleware.WriteJsonError(w, http.StatusInternalServerError)
+		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
@@ -255,7 +254,7 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 		parsedHTMLTemplate, err := template.ParseFiles(filePath)
 		if err != nil {
 			log.Warn("error parsing template file '" + filePath + "': " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 
@@ -263,10 +262,10 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 		if endpointConfig.Requires != nil {
 			// Generate nonce
 			if slices.Contains(endpointConfig.Requires, "nonce") {
-				nonce, nonceExists := middleware.GetNonceFromContext(ctx)
+				nonce, nonceExists := GetNonceFromContext(ctx)
 				if !nonceExists || strings.TrimSpace(nonce) == "" {
 					log.Error("Error retrieving CSP nonce from context")
-					middleware.WriteJsonError(w, http.StatusInternalServerError)
+					WriteJsonError(w, http.StatusInternalServerError)
 					return
 				}
 				httpTemplateResponseData.JsNonce = nonce
@@ -276,7 +275,7 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 				webmasterName, webmasterEmail, err := config.GetWebmasterContact()
 				if err != nil {
 					log.Error("error retrieving webmaster contact info: " + err.Error() + "")
-					middleware.WriteJsonError(w, http.StatusInternalServerError)
+					WriteJsonError(w, http.StatusInternalServerError)
 					return
 				}
 				httpTemplateResponseData.WebmasterName = webmasterName
@@ -288,7 +287,7 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 				tagnumber, err := types.ConvertAndVerifyTagnumber(tagQueryValue)
 				if err != nil {
 					log.Warn("invalid tagnumber in URL query: '" + tagQueryValue + "', " + err.Error())
-					middleware.WriteJsonError(w, http.StatusBadRequest)
+					WriteJsonError(w, http.StatusBadRequest)
 					return
 				}
 				httpTemplateResponseData.ClientTag = strconv.FormatInt(*tagnumber, 10)
@@ -298,7 +297,7 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 		// Execute the template
 		if err := parsedHTMLTemplate.Execute(w, httpTemplateResponseData); err != nil {
 			log.Error("error executing template file '" + filePath + "': " + err.Error())
-			middleware.WriteJsonError(w, http.StatusInternalServerError)
+			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 		return
@@ -313,8 +312,8 @@ func WebServerHandler(w http.ResponseWriter, req *http.Request) {
 
 func RejectRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	log := middleware.GetLoggerFromContext(ctx)
+	log := GetLoggerFromContext(ctx)
 
 	log.Warn("access denied to forbidden endpoint")
-	middleware.WriteJsonError(w, http.StatusForbidden)
+	WriteJsonError(w, http.StatusForbidden)
 }

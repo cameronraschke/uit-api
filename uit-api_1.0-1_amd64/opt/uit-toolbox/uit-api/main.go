@@ -11,8 +11,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"uit-api/appstate"
+	"uit-api/auth"
 	"uit-api/config"
 	"uit-api/database"
+	"uit-api/endpoints"
+	"uit-api/logger"
 	"uit-api/webserver"
 )
 
@@ -45,79 +49,42 @@ func main() {
 	}()
 
 	// Initialize application
-	if _, err := config.InitApp(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize application: "+err.Error())
-		config.FlushLogBuffers()
+	if err := logger.InitLogger(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize logger: "+err.Error())
+		os.Exit(1)
+	}
+	if err := config.InitAppConfig(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize application configuration: "+err.Error())
+		os.Exit(1)
+	}
+	if err := endpoints.InitEndpointConfig(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize endpoint configuration: "+err.Error())
+		os.Exit(1)
+	}
+	if err := appstate.InitAppState(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize application state: "+err.Error())
+		os.Exit(1)
+	}
+	if err := database.InitDatabasePools(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize database pools: "+err.Error())
+		os.Exit(1)
+	}
+	if err := auth.InitRateLimiters(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize rate limiters: "+err.Error())
+		os.Exit(1)
+	}
+	if err := auth.InitAuthSessions(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to initialize authentication sessions: "+err.Error())
 		os.Exit(1)
 	}
 
-	log := config.GetLogger()
-	if log == nil {
-		fmt.Fprintln(os.Stderr, "Global logger is nil in main")
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-	log = log.With(slog.String("func", "main"))
-
-	// Get DB credentials
-	dbConnectionInfo, err := config.GetDatabaseCredentials()
-	if err != nil {
-		log.Error("Failed to retrieve database credentials: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-
-	// Create DB connection
-	dbConn, err := database.NewDBConnection(dbConnectionInfo)
-	if err != nil {
-		log.Error("Failed to connect to the database: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-	defer dbConn.Close()
-
-	pgxPool, err := database.NewPGXPool(dbConnectionInfo)
-	if err != nil {
-		log.Error("Failed to connect to the pgx pool: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-	defer pgxPool.Close()
-
-	if err := config.SetDatabaseConn(dbConn); err != nil {
-		log.Error("Failed to set database connection: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-	if err := config.SetPGXPool(pgxPool); err != nil {
-		log.Error("Failed to set pgx pool: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-
-	// Create admin user
-	if err = database.CreateAdminUser(); err != nil {
-		log.Error("Failed to create admin user in DB: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
+	log := logger.GetLogger().With(slog.String("func", "main"))
+	logger.FlushLogBuffers()
 
 	httpHost, _, err := config.GetWebServerIPs()
 	if err != nil || strings.TrimSpace(httpHost) == "" {
 		log.Error("Failed to retrieve HTTP server IP: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-
-	as, err := config.GetAppState()
-	if err != nil {
-		log.Error("Failed to retrieve app state: " + err.Error())
-		config.FlushLogBuffers()
-		os.Exit(1)
-	}
-	if as == nil {
-		log.Error("App state is nil after initialization")
-		config.FlushLogBuffers()
+		logger.FlushLogBuffers()
 		os.Exit(1)
 	}
 
@@ -176,7 +143,7 @@ func main() {
 	})
 
 	log.Info("Servers started in: " + time.Since(startTime).String())
-	config.FlushLogBuffers()
+	logger.FlushLogBuffers()
 
 	// Wait for shutdown signal or error
 	select {
@@ -192,7 +159,7 @@ func main() {
 		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
 		flushCancel()
 	}
-	config.FlushLogBuffers()
+	logger.FlushLogBuffers()
 
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer waitCancel()
@@ -213,5 +180,5 @@ func main() {
 	}
 
 	log.Info("UIT Web has been stopped.")
-	config.FlushLogBuffers()
+	logger.FlushLogBuffers()
 }

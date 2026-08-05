@@ -15,6 +15,29 @@ const (
 	CSRFTTL        = 20 * time.Minute
 )
 
+const (
+	RateLimitTimeout = 10 * time.Second
+)
+
+type RequestLimiters struct {
+	TimeoutDuration     time.Duration
+	WebServerLimiterMu  sync.RWMutex
+	WebServerLimiterMap map[netip.Addr]RateLimiter
+	FileLimiterMu       sync.RWMutex
+	FileLimiterMap      map[netip.Addr]RateLimiter
+	APILimiterMu        sync.RWMutex
+	APILimiterMap       map[netip.Addr]RateLimiter
+	AuthLimiterMu       sync.RWMutex
+	AuthLimiterMap      map[netip.Addr]RateLimiter
+	BannedClientsMu     sync.RWMutex
+	BannedClients       map[netip.Addr]time.Time
+}
+
+type AuthSessionsMap struct {
+	M  map[string]AuthSession
+	Mu *sync.RWMutex
+}
+
 type AuthSession struct {
 	IPAddress     netip.Addr
 	SessionID     string

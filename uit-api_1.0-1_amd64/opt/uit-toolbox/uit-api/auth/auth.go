@@ -1,4 +1,4 @@
-package config
+package auth
 
 import (
 	"crypto/hmac"
@@ -11,57 +11,62 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"uit-api/appstate"
+	"uit-api/config"
+	"uit-api/logger"
 	"uit-api/types"
 )
 
-var ErrTooManyAuthSessions = errors.New("auth session limit reached")
+var (
+	AuthSessions = new(types.AuthSessionsMap)
+)
+
+func InitAuthSessions() error {
+	AuthSessions.M = make(map[string]types.AuthSession, 100)
+	AuthSessions.Mu = new(sync.RWMutex)
+	return nil
+}
+
+func GetAuthSessionsCopy() map[string]types.AuthSession {
+	AuthSessions.Mu.RLock()
+	defer AuthSessions.Mu.RUnlock()
+	authMapCopy := make(map[string]types.AuthSession, len(AuthSessions.M))
+	for sessionID, value := range AuthSessions.M {
+		authMapCopy[sessionID] = value
+	}
+	return authMapCopy
+}
+
+func GetAuthSessionsPtr() (map[string]types.AuthSession, *sync.RWMutex) {
+	return AuthSessions.M, AuthSessions.Mu
+}
 
 // Auth for web users
 func GetAdminCredentials() (string, string, error) {
-	appState, err := GetAppState()
+	ac, err := config.GetAppConfig()
 	if err != nil {
 		return "", "", fmt.Errorf("error getting app state in GetAdminCredentials: %w", err)
 	}
 
 	adminUsername := "admin"
-	adminPasswd := strings.TrimSpace(appState.appConfig.Load().WebUserDefaultPasswd)
+	adminPasswd := ac.WebUserDefaultPasswd
 	return adminUsername, adminPasswd, nil
-}
-
-// Returns all active auth sessions as a map[string]types.AuthSession
-func GetAuthSessions() map[string]types.AuthSession {
-	appState, err := GetAppState()
-	if err != nil {
-		return nil
-	}
-	authSessionsMap := make(map[string]types.AuthSession)
-	appState.authMapMutex.RLock()
-	defer appState.authMapMutex.RUnlock()
-	for sessionID, value := range appState.authMap {
-		if sessionID == "" && value != (types.AuthSession{}) {
-			continue
-		}
-		authSessionsMap[sessionID] = value
-	}
-	return authSessionsMap
 }
 
 func CreateAuthSession(requestIP netip.Addr) (*types.AuthSession, error) {
 	if requestIP == (netip.Addr{}) || !requestIP.IsValid() {
 		return nil, errors.New("empty or invalid IP address")
 	}
-	appState, err := GetAppState()
-	if err != nil {
-		return nil, fmt.Errorf("error getting app state in CreateAuthSession: %w", err)
-	}
+	sessions, mu := GetAuthSessionsPtr()
 
-	appState.authMapMutex.RLock()
-	if len(appState.authMap) >= 1000 {
-		appState.authMapMutex.RUnlock()
-		return nil, ErrTooManyAuthSessions
+	mu.RLock()
+	if len(sessions) >= 1000 {
+		mu.RUnlock()
+		return nil, types.ErrTooManyAuthSessions
 	}
-	appState.authMapMutex.RUnlock()
+	mu.RUnlock()
 
 	curTime := time.Now()
 
@@ -140,38 +145,33 @@ func CreateAuthSession(requestIP netip.Addr) (*types.AuthSession, error) {
 		},
 	}
 
-	appState.authMapMutex.Lock()
-	defer appState.authMapMutex.Unlock()
-	appState.authMap[authSession.SessionID] = authSession
+	mu.Lock()
+	defer mu.Unlock()
+	sessions[authSession.SessionID] = authSession
 
 	return &authSession, nil
 }
 
 func DeleteAuthSessions(sessionIDs []string) []error {
-	log := GetLogger()
-	appState, err := GetAppState()
-
 	errSlice := make([]error, 0, len(sessionIDs))
 
-	if err != nil {
-		errSlice = append(errSlice, fmt.Errorf("failed to get app state: %w", err))
-		return errSlice
-	}
+	log := logger.GetLogger()
+	sessions, mu := GetAuthSessionsPtr()
 
 	stringsToLog := make([]string, 0, len(sessionIDs))
 
-	appState.authMapMutex.Lock()
+	mu.Lock()
 	for _, sessionID := range sessionIDs {
-		if _, ok := appState.authMap[sessionID]; ok {
-			ipAddress := appState.authMap[sessionID].IPAddress.String()
-			delete(appState.authMap, sessionID)
-			sessionCount := len(appState.authMap)
+		if _, ok := sessions[sessionID]; ok {
+			ipAddress := sessions[sessionID].IPAddress.String()
+			delete(sessions, sessionID)
+			sessionCount := len(sessions)
 			stringsToLog = append(stringsToLog, "Deleted auth session with ID: "+sessionID+" (IP: "+ipAddress+", active sessions: "+strconv.Itoa(sessionCount)+")")
 		} else {
 			errSlice = append(errSlice, fmt.Errorf("Attempted to delete non-existent auth session with ID: %s", sessionID))
 		}
 	}
-	appState.authMapMutex.Unlock()
+	mu.Unlock()
 
 	for _, msg := range stringsToLog {
 		log.Info(msg)
@@ -180,25 +180,22 @@ func DeleteAuthSessions(sessionIDs []string) []error {
 }
 
 func ClearExpiredAuthSessions() {
-	log := GetLogger()
-	appState, err := GetAppState()
-	if err != nil {
-		return
-	}
+	log := logger.GetLogger()
+	sessions, mu := GetAuthSessionsPtr()
 	curTime := time.Now()
 
 	expiredAuthSessions := make([]string, 0, 10)
 	stringsToLog := make([]string, 0, 10)
 
-	appState.authMapMutex.RLock()
-	for sessionID, authSession := range appState.authMap {
+	mu.RLock()
+	for sessionID, authSession := range sessions {
 		if authSession.BasicToken.Expiry.Before(curTime) &&
 			authSession.BearerToken.Expiry.Before(curTime) {
 			expiredAuthSessions = append(expiredAuthSessions, sessionID)
 			stringsToLog = append(stringsToLog, "Auth session expired: "+authSession.BasicToken.IP.String()+" (TTL: "+fmt.Sprintf("%.2f", authSession.BearerToken.Expiry.Sub(curTime).Seconds())+")")
 		}
 	}
-	appState.authMapMutex.RUnlock()
+	mu.RUnlock()
 
 	for _, msg := range stringsToLog {
 		log.Info(msg)
@@ -211,14 +208,9 @@ func ClearExpiredAuthSessions() {
 	}
 }
 
-func GetAuthSessionCount() int64 {
-	appState, err := GetAppState()
-	if err != nil {
-		return 0
-	}
-	appState.authMapMutex.RLock()
-	defer appState.authMapMutex.RUnlock()
-	return int64(len(appState.authMap))
+func GetAuthSessionCount() int {
+	am := GetAuthSessionsCopy()
+	return len(am)
 }
 
 func IsAuthSessionValid(checkedAuthSession *types.AuthSession, requestIP netip.Addr) (bool, error) {
@@ -264,14 +256,9 @@ func IsAuthSessionValid(checkedAuthSession *types.AuthSession, requestIP netip.A
 }
 
 func GetAuthSessionByID(sessionID string) (*types.AuthSession, error) {
-	appState, err := GetAppState()
-	if err != nil {
-		return nil, fmt.Errorf("error getting app state in GetAuthSessionByID: %w", err)
-	}
+	sessionsCopy := GetAuthSessionsCopy()
 
-	appState.authMapMutex.RLock()
-	authSession, ok := appState.authMap[sessionID]
-	appState.authMapMutex.RUnlock()
+	authSession, ok := sessionsCopy[sessionID]
 	if !ok {
 		return nil, fmt.Errorf("auth session not found")
 	}
@@ -279,22 +266,19 @@ func GetAuthSessionByID(sessionID string) (*types.AuthSession, error) {
 }
 
 func UpdateAuthSession(sessionID string, newAuthSession *types.AuthSession) error {
-	appState, err := GetAppState()
-	if err != nil {
-		return fmt.Errorf("error getting app state in UpdateAuthSession: %w", err)
-	}
+	sessions, mu := GetAuthSessionsPtr()
 
 	if newAuthSession == nil || newAuthSession.SessionID == "" {
 		return fmt.Errorf("new auth session is nil or has empty session ID")
 	}
 
-	appState.authMapMutex.Lock()
-	defer appState.authMapMutex.Unlock()
-	if authSession, ok := appState.authMap[sessionID]; !ok || authSession.SessionID == "" {
+	mu.Lock()
+	defer mu.Unlock()
+	if authSession, ok := sessions[sessionID]; !ok || authSession.SessionID == "" {
 		return fmt.Errorf("auth session not found for session ID: %s", sessionID)
 	}
 
-	appState.authMap[sessionID] = *newAuthSession
+	sessions[sessionID] = *newAuthSession
 	return nil
 }
 
@@ -310,13 +294,88 @@ func IsSessionTokenValid(clientToken string, serverSecret []byte) bool {
 	hmacHash := hmac.New(sha256.New, serverSecret)
 	hmacHash.Write([]byte(clientToken))
 	computedHash := hmacHash.Sum(nil)
-	return hmac.Equal(computedHash, serverSecret)
+	expectedHash, err := SignSessionToken(clientToken, serverSecret)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(computedHash, []byte(expectedHash))
 }
 
 func GetServerSecret() ([]byte, error) {
-	appState, err := GetAppState()
+	appState, err := appstate.GetAppState()
 	if err != nil {
 		return nil, fmt.Errorf("error getting app state in GetServerSecret: %w", err)
 	}
-	return appState.sessionSecret, nil
+	return appState.SessionSecret, nil
+}
+
+// IP address checks
+func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (allowed bool, retryAt time.Time, err error) {
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		return allowed, retryAt, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
+	}
+	if !ipAddr.IsValid() {
+		return allowed, retryAt, fmt.Errorf("request IP is invalid or blocked")
+	}
+
+	var lt LimiterType
+	if strings.TrimSpace(limiterType) != "" {
+		lt = ToLimiterType(limiterType)
+		if !lt.IsValid() {
+			return true, retryAt, fmt.Errorf("invalid limiter type: %s", limiterType)
+		}
+	}
+
+	switch strings.TrimSpace(strings.ToLower(networkDomain)) {
+	case "wan":
+		allowed, err = ipAllowedInRanges(ipAddr, &ac.AllowedWANMap)
+		if err != nil {
+			return allowed, retryAt, fmt.Errorf("error checking WAN IP ranges: %w", err)
+		}
+	case "lan":
+		allowed, err = ipAllowedInRanges(ipAddr, &ac.AllowedLANMap)
+		if err != nil {
+			return allowed, retryAt, fmt.Errorf("error checking LAN IP ranges: %w", err)
+		}
+	case "any":
+		allowed, err = ipAllowedInRanges(ipAddr, &ac.AllAllowedMap)
+		if err != nil {
+			return allowed, retryAt, fmt.Errorf("error checking IP ranges: %w", err)
+		}
+	default:
+		return allowed, retryAt, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
+	}
+
+	if lt.IsValid() {
+		isRateLimited, bannedUntil := lt.IsClientRateLimited(ipAddr)
+		if isRateLimited {
+			return false, bannedUntil, fmt.Errorf("client is rate limited until %s", bannedUntil.Format(time.RFC3339))
+		}
+	}
+	return allowed, retryAt, nil
+}
+
+func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err error) {
+	if ranges == nil {
+		return false, fmt.Errorf("IP range map is nil")
+	}
+
+	allowed = false
+	ranges.Range(func(k, v any) bool {
+		ipRangePtr, ok := k.(*netip.Prefix)
+		if !ok || ipRangePtr == nil {
+			return true
+		}
+		ipRange := *ipRangePtr
+		if ipRange == (netip.Prefix{}) {
+			return true
+		}
+		if ipRange.Contains(ipAddr) {
+			allowed = true
+			return false
+		}
+		return true
+	})
+	return allowed, nil
 }
