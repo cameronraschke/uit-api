@@ -20,6 +20,16 @@ import (
 	"uit-api/webserver"
 )
 
+func replaceAllRealtimeDataFromDB(ctx context.Context) error {
+	res, err := database.GetAllLiveOSData(ctx)
+	for tag, data := range res {
+		if err := appstate.ReplaceClientRealtimeData(tag, &data); err != nil {
+			return fmt.Errorf("failed to update client realtime data for tag %d: %w", tag, err)
+		}
+	}
+	return err
+}
+
 func main() {
 	fmt.Fprintln(os.Stdout, "Starting UIT Web...")
 
@@ -72,6 +82,11 @@ func main() {
 	}
 	defer dbPool.Close()
 	defer pgxPool.Close()
+	// Load all client realtime data from DB into app state
+	if err := replaceAllRealtimeDataFromDB(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to load client realtime data from DB: "+err.Error())
+		os.Exit(1)
+	}
 	if err := auth.InitRateLimiters(); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to initialize rate limiters: "+err.Error())
 		os.Exit(1)

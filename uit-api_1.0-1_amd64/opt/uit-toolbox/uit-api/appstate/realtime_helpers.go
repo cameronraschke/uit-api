@@ -118,7 +118,7 @@ func SetRealtimeClientUUID(tag int64, uuid uuid.UUID) error {
 	return nil
 }
 
-func UpdateClientLastHeard(tag int64, lastHeard *time.Time) error {
+func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
@@ -136,7 +136,32 @@ func UpdateClientLastHeard(tag int64, lastHeard *time.Time) error {
 	clientData := appState.ClientRealtimeData[tag]
 	clientData.Tagnumber = tag
 	clientData.LastHeard = lastHeard
+	clientData.LastHeardUpdatedInDB = false // Mark as not updated in DB, this function only gets used in post.go
 	appState.ClientRealtimeData[tag] = clientData
+
+	return nil
+}
+
+func ReplaceClientRealtimeData(tag int64, val *types.JobQueueRealtimeData) error {
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
+		return types.CreateInvalidFieldError("tagnumber", err)
+	}
+	if val == nil {
+		return fmt.Errorf("JobQueueRealtimeData struct is nil")
+	}
+	if val.LastHeard == nil || val.LastHeard.IsZero() {
+		return fmt.Errorf("lastHeard is nil, skipping update for tag %d", tag)
+	}
+
+	appState, err := GetAppState()
+	if err != nil || appState == nil {
+		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+	}
+
+	valCopy := *val // Create a copy to avoid modifying the original struct
+	appState.ClientRealtimeDataMu.Lock()
+	defer appState.ClientRealtimeDataMu.Unlock()
+	appState.ClientRealtimeData[tag] = valCopy
 
 	return nil
 }

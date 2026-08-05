@@ -2688,3 +2688,51 @@ func ConvertClientInfoToCSV(ctx context.Context, tags []int64) (*bytes.Buffer, e
 
 	return &buf, nil
 }
+
+func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData, error) {
+	pgxPool, err := GetPGXPool()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
+	}
+
+	jobMapCopy := make(map[int64]types.JobQueueRealtimeData, 600)
+	const sqlCode = `
+		SELECT
+			ids.uuid,
+			ids.tagnumber,
+			ids.system_serial,
+			live_os_data.last_heard,
+			TRUE,
+			live_os_data.system_uptime,
+			live_os_data.client_app_uptime
+		FROM ids
+		INNER JOIN live_os_data ON ids.uuid = live_os_data.client_uuid
+	;`
+
+	rows, err := pgxPool.Query(ctx, sqlCode)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%w: %w", types.DatabaseRowIterationError, ctx.Err())
+		}
+		var jobData types.JobQueueRealtimeData
+		if err := rows.Scan(
+			&jobData.ClientUUID,
+			&jobData.Tagnumber,
+			&jobData.SerialNumber,
+			&jobData.LastHeard,
+			&jobData.LastHeardUpdatedInDB,
+			&jobData.SystemUptime,
+			&jobData.AppUptime,
+		); err != nil {
+			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
+		}
+		jobMapCopy[jobData.Tagnumber] = jobData
+	}
+
+	return jobMapCopy, nil
+}

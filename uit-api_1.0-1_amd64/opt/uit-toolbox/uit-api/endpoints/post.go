@@ -569,7 +569,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	}
 
 	lastHeard := lastHeardData.LastHeard.UTC()
-	if err := appstate.UpdateClientLastHeard(lastHeardData.Tagnumber, &lastHeard); err != nil {
+	if err := appstate.UpdateClientLastHeardInAppState(lastHeardData.Tagnumber, &lastHeard); err != nil {
 		log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "lastHeard", err))
 		WriteJsonError(w, http.StatusInternalServerError)
 		return

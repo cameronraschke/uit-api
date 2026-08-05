@@ -15,14 +15,14 @@ const (
 )
 
 type JobQueueRealtimeData struct {
-	ClientUUID     uuid.UUID
-	Tagnumber      int64
-	SerialNumber   string
-	LastHeard      *time.Time
-	LastHeardInDB  *bool
-	SystemUptime   time.Duration
-	AppUptime      time.Duration
-	LiveImageBytes []byte
+	ClientUUID           uuid.UUID
+	Tagnumber            int64
+	SerialNumber         string
+	LastHeard            *time.Time
+	LastHeardUpdatedInDB bool
+	SystemUptime         time.Duration
+	AppUptime            time.Duration
+	LiveImageBytes       []byte
 }
 
 type JobQueueTableRowView struct {
