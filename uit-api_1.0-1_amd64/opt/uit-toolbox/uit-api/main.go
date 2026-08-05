@@ -65,10 +65,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Failed to initialize application state: "+err.Error())
 		os.Exit(1)
 	}
-	if err := database.InitDatabasePools(); err != nil {
+	dbPool, pgxPool, err := database.InitDatabasePools()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to initialize database pools: "+err.Error())
 		os.Exit(1)
 	}
+	defer dbPool.Close()
+	defer pgxPool.Close()
 	if err := auth.InitRateLimiters(); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to initialize rate limiters: "+err.Error())
 		os.Exit(1)

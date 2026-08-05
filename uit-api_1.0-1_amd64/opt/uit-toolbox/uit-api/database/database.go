@@ -24,25 +24,23 @@ var (
 	pgxPool      atomic.Pointer[pgxpool.Pool]
 )
 
-func InitDatabasePools() error {
+func InitDatabasePools() (*sql.DB, *pgxpool.Pool, error) {
 	// Get DB credentials
 	dbConnectionInfo, err := GetDatabaseCredentials()
 	if err != nil {
-		return fmt.Errorf("failed to get database credentials: %w", err)
+		return nil, nil, fmt.Errorf("failed to get database credentials: %w", err)
 	}
 
 	// Create DB connection
 	dbConn, err := NewDBConnection(dbConnectionInfo)
 	if err != nil {
-		return fmt.Errorf("failed to create database connection: %w", err)
+		return nil, nil, fmt.Errorf("failed to create database connection: %w", err)
 	}
-	defer dbConn.Close()
 
 	pg, err := NewPGXPool(dbConnectionInfo)
 	if err != nil {
-		return fmt.Errorf("failed to create pgx pool: %w", err)
+		return nil, nil, fmt.Errorf("failed to create pgx pool: %w", err)
 	}
-	defer pg.Close()
 
 	stdLibDBPool.Store(dbConn)
 
@@ -50,10 +48,10 @@ func InitDatabasePools() error {
 
 	// Create admin user
 	if err = CreateAdminUser(); err != nil {
-		return fmt.Errorf("failed to create admin user: %w", err)
+		return nil, nil, fmt.Errorf("failed to create admin user: %w", err)
 	}
 
-	return nil
+	return stdLibDBPool.Load(), pgxPool.Load(), nil
 }
 
 func VerifyRowsAffected(result sql.Result, expectedRowCount int64) error {
