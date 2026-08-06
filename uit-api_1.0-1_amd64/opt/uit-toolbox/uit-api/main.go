@@ -34,7 +34,7 @@ func main() {
 	fmt.Fprintln(os.Stdout, "Starting UIT Web...")
 
 	// Create root context
-	ctx, stop := signal.NotifyContext(
+	rootCtx, stopRootCtx := signal.NotifyContext(
 		context.Background(),
 		syscall.SIGHUP,
 		syscall.SIGINT,
@@ -42,7 +42,7 @@ func main() {
 		syscall.SIGABRT,
 		syscall.SIGTERM,
 	)
-	defer stop()
+	defer stopRootCtx()
 
 	startTime := time.Now()
 	fmt.Fprintln(os.Stdout, "Server time: "+startTime.Format("01-02-2006 15:04:05"))
@@ -53,7 +53,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Panic: "+fmt.Sprint(recoveryErr))
 			fmt.Fprintln(os.Stderr, "Stack:\n"+string(debug.Stack()))
 			time.Sleep(100 * time.Millisecond) // Buffer
-			stop()                             // Cancel context to stop all goroutines
+			stopRootCtx()                      // Cancel context to stop all goroutines
 			return
 		}
 	}()
@@ -83,7 +83,7 @@ func main() {
 	defer dbPool.Close()
 	defer pgxPool.Close()
 	// Load all client realtime data from DB into app state
-	if err := replaceAllRealtimeDataFromDB(ctx); err != nil {
+	if err := replaceAllRealtimeDataFromDB(rootCtx); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to load client realtime data from DB: "+err.Error())
 		os.Exit(1)
 	}
@@ -101,7 +101,7 @@ func main() {
 
 	httpHost, _, err := config.GetWebServerIPs()
 	if err != nil || strings.TrimSpace(httpHost) == "" {
-		log.Error("Failed to retrieve HTTP server IP: " + err.Error())
+		log.Errorf("Failed to retrieve HTTP server IP: %v", err)
 		logger.FlushLogBuffers()
 		os.Exit(1)
 	}
@@ -110,35 +110,35 @@ func main() {
 	errChan := make(chan error, 10) // Buffer in case of multiple errors
 
 	wg.Go(func() {
-		if err := webserver.StartPprofServer(ctx); err != nil {
+		if err := webserver.StartPprofServer(rootCtx); err != nil {
 			select {
 			case errChan <- err:
 			default:
-				log.Warn("Error channel full, cannot send pprof server error (func main - StartPprofServer)")
+				log.Warnf("Error channel full, cannot send pprof server error (func main - StartPprofServer)")
 			}
 		}
 	})
 
 	// Start HTTP server
-	log.Info("Starting HTTP server on http://" + httpHost + ":8080")
+	log.Infof("Starting HTTP server on http://%s:8080", httpHost)
 	wg.Go(func() {
-		if err := webserver.StartFileServer(ctx, httpHost); err != nil {
+		if err := webserver.StartFileServer(rootCtx, httpHost); err != nil {
 			select {
 			case errChan <- err:
 			default:
-				log.Warn("Error channel full, cannot send HTTP server error (func main - StartFileServer)")
+				log.Warnf("Error channel full, cannot send HTTP server error (func main - StartFileServer)")
 			}
 		}
 	})
 
 	// Start HTTPS server
-	log.Info("Starting the HTTPS server on https://*:31411")
+	log.Infof("Starting the HTTPS server on https://*:31411")
 	wg.Go(func() {
-		if err := webserver.StartWebServer(ctx); err != nil {
+		if err := webserver.StartWebServer(rootCtx); err != nil {
 			select {
 			case errChan <- err:
 			default:
-				log.Warn("Error channel full, cannot send HTTPS server error (func main - StartWebServer)")
+				log.Warnf("Error channel full, cannot send HTTPS server error (func main - StartWebServer)")
 			}
 		}
 	})
@@ -147,32 +147,32 @@ func main() {
 	wg.Go(func() {
 		defer func() {
 			if recoveryErr := recover(); recoveryErr != nil {
-				log.Error("Background process panic: " + fmt.Sprintf("%v", recoveryErr))
-				log.Error("Stack:\n" + string(debug.Stack()))
+				log.Errorf("Background process panic: %v", recoveryErr)
+				log.Errorf("Stack:\n%v", string(debug.Stack()))
 				select {
 				case errChan <- fmt.Errorf("background process panic: %v", recoveryErr):
 				default:
-					log.Warn("Error channel full, cannot send panic error (func main - startBackgroundProcesses)")
+					log.Warnf("Error channel full, cannot send panic error (func main - startBackgroundProcesses)")
 				}
 			}
 		}()
-		log.Info("Starting background processes...")
-		startBackgroundProcesses(ctx, errChan)
+		log.Infof("Starting background processes...")
+		startBackgroundProcesses(rootCtx, errChan)
 	})
 
-	log.Info("Servers started in: " + time.Since(startTime).String())
+	log.Infof("Servers started in: %dms", time.Since(startTime).Milliseconds())
 	logger.FlushLogBuffers()
 
 	// Wait for shutdown signal or error
 	select {
-	case <-ctx.Done():
-		log.Info("Shutdown signal received.")
+	case <-rootCtx.Done():
+		log.Infof("Shutdown signal received.")
 		flushCtx, flushCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
 		flushCancel()
 	case err := <-errChan:
-		log.Error("Error received: " + err.Error())
-		stop() // Cancel context to stop all goroutines
+		log.Errorf("Error received: %v", err)
+		stopRootCtx() // Cancel context to stop all goroutines
 		flushCtx, flushCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
 		flushCancel()
@@ -190,13 +190,13 @@ func main() {
 
 	select {
 	case <-wgDone:
-		log.Info("All goroutines stopped gracefully")
+		log.Infof("All goroutines stopped gracefully")
 	case <-waitCtx.Done():
-		log.Error("Shutdown timeout reached: " + waitCtx.Err().Error())
-		log.Error("Forcing process exit; goroutines still running")
-		log.Error("Goroutine dump:\n" + string(debug.Stack()))
+		log.Errorf("Shutdown timeout reached: %v", waitCtx.Err())
+		log.Errorf("Forcing process exit; goroutines still running")
+		log.Errorf("Goroutine dump: \n%v", string(debug.Stack()))
 	}
 
-	log.Info("UIT Web has been stopped.")
+	log.Infof("UIT Web has been stopped.")
 	logger.FlushLogBuffers()
 }

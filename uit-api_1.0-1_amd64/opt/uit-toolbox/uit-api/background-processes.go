@@ -88,12 +88,12 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 			select {
 			case msg, ok := <-logChan:
 				if !ok {
-					log.Info("Background process log channel closed")
+					log.Infof("Background process log channel closed")
 					return nil
 				}
-				log.Info("(Background): " + msg)
+				log.Infof("(Background): %s", msg)
 			case <-errCtx.Done():
-				log.Info("Background process log channel closed due to context cancellation")
+				log.Infof("Background process log channel closed due to context cancellation")
 				return nil
 			}
 		}
@@ -103,10 +103,10 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 	errGroup.Go(func() error {
 		select {
 		case err := <-errChan:
-			log.Info(fmt.Sprintf("Background process error, exiting: %v", err))
+			log.Infof("Background process error, exiting: %v", err)
 			return err
 		case <-errCtx.Done():
-			log.Info("Background processes stopping...")
+			log.Infof("Background processes stopping...")
 			return nil
 		}
 	})
@@ -126,7 +126,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 				return []string{fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", newSessionCount, sessionDiff)}, nil
 			},
 			OnErr: func(err error) error {
-				log.Error(fmt.Sprintf("Error during auth map cleanup: %v", err))
+				log.Errorf("Error during auth map cleanup: %v", err)
 				return err
 			},
 		})
@@ -143,7 +143,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 				return writeLastHeardToDB(workerCtx, 1*time.Second) // 1s sleep between writes during regular operation
 			},
 			OnErr: func(err error) error {
-				log.Error(fmt.Sprintf("Error writing last_heard to DB: %v", err))
+				log.Errorf("Error writing last_heard to DB: %v", err)
 				return err
 			},
 		})
@@ -165,7 +165,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 				return logMsg, err
 			},
 			OnErr: func(err error) error {
-				log.Error(fmt.Sprintf("Error during rate limiter cleanup: %v", err))
+				log.Errorf("Error during rate limiter cleanup: %v", err)
 				return err
 			},
 		})
@@ -187,7 +187,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 				return logMsg, err
 			},
 			OnErr: func(err error) error {
-				log.Error(fmt.Sprintf("Error during banned clients cleanup: %v", err))
+				log.Errorf("Error during banned clients cleanup: %v", err)
 				return err
 			},
 		})
@@ -206,7 +206,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 				return logMsg, nil
 			},
 			OnErr: func(err error) error {
-				log.Error(fmt.Sprintf("Error during offline clients cleanup: %v", err))
+				log.Errorf("Error during offline clients cleanup: %v", err)
 				return err
 			},
 		})
@@ -226,7 +226,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 				return logMsg, err
 			},
 			OnErr: func(err error) error {
-				log.Error(fmt.Sprintf("Error during log buffer flush: %v", err))
+				log.Errorf("Error during log buffer flush: %v", err)
 				return err
 			},
 		})
@@ -234,7 +234,7 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 
 	log.Info("Background processes started")
 	if err := errGroup.Wait(); err != nil {
-		log.Error(fmt.Sprintf("Background processes exited with error: %v", err))
+		log.Errorf("Background processes exited with error: %v", err)
 	} else {
 		log.Info("Background processes exited without error")
 	}

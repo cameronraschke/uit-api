@@ -26,13 +26,13 @@ func runServerLifecycle(
 
 	select {
 	case <-ctx.Done():
-		log.Info(serverName + " shutting down...")
+		log.Infof("%s shutting down...", serverName)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := shutdownFn(shutdownCtx); err != nil {
 			return fmt.Errorf("error shutting down %s: %w", serverName, err)
 		}
-		log.Info(serverName + " stopped")
+		log.Infof("%s stopped", serverName)
 		return nil
 	case err := <-serverErr:
 		return err
