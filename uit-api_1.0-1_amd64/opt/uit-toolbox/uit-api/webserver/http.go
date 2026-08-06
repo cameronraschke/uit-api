@@ -39,7 +39,6 @@ func StartFileServer(ctx context.Context, serverHost string) error {
 	httpMux.Handle("/client/", fileServerChain.ThenFunc(endpoints.FileServerHandler))
 	httpMux.Handle("/client", fileServerChain.ThenFunc(endpoints.RejectRequest))
 	httpMux.Handle("/", httpBaseChain.ThenFunc(endpoints.RejectRequest))
-	log.Infof("Starting HTTP file server...")
 
 	httpServer := &http.Server{
 		Addr:           serverHost + ":8080",

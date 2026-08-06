@@ -1198,3 +1198,16 @@ func GetDiskImageNameByModel(w http.ResponseWriter, req *http.Request) {
 	returnedJson.ImageName = diskImageResponse.ImageName
 	WriteJson(w, http.StatusOK, returnedJson)
 }
+
+func GetRealtimeClientInfo(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetRealtimeClientInfo"))
+
+	as, err := appstate.GetAllClientRealtimeData()
+	if err != nil {
+		log.Warn("Error fetching realtime client info: " + err.Error())
+		WriteJsonError(w, http.StatusInternalServerError)
+		return
+	}
+	WriteJson(w, http.StatusOK, as)
+}

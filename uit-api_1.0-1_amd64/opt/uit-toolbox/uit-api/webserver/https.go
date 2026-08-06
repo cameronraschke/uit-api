@@ -114,6 +114,7 @@ func StartWebServer(ctx context.Context) error {
 	// Misc
 	httpsRouter.Handle("GET /api/server_time", httpsFullAPIChain.ThenFunc(endpoints.GetServerTime))
 	httpsRouter.Handle("GET /api/new_transaction_uuid", httpsFullAPIChain.ThenFunc(endpoints.GetNewTransactionUUID))
+	httpsRouter.Handle("GET /admin/realtime-client-info", httpsFullAPIChain.ThenFunc(endpoints.GetRealtimeClientInfo))
 
 	// Overviews
 	httpsRouter.Handle("GET /api/client", httpsFullAPIChain.ThenFunc(endpoints.GetClientInfo))
@@ -174,8 +175,6 @@ func StartWebServer(ctx context.Context) error {
 	// For clients plugged into server
 	httpsRouter.Handle("GET /static/client/configs/uit-client", httpsFullAPIChain.ThenFunc(endpoints.GetClientConfig))
 	httpsRouter.Handle("GET /client/pkg/uit-client", httpsFullAPIChain.ThenFunc(endpoints.WebServerHandler))
-
-	log.Infof("Starting HTTPS web server...")
 
 	ac, err := config.GetAppConfig()
 	if err != nil {
