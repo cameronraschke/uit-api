@@ -13,13 +13,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Expiration for auth sessions and banned clients is checked on each request, this is just a periodic cleanup to free memory
+// last_heard values get written to DB on app shutdown, this is in case of a DB/app error
 const (
 	flushLogBufferInterval        = 3 * time.Second
-	authMapCleanupInterval        = 3 * time.Minute
+	authMapCleanupInterval        = 5 * time.Minute
 	bannedClientsCleanupInterval  = 5 * time.Minute
 	liveScreenshotCleanupInterval = 30 * time.Minute
 	rateLimiterCleanupInterval    = 5 * time.Minute
-	writeLastHeardInterval        = 1 * time.Minute
+	writeLastHeardInterval        = 30 * time.Minute
 )
 
 type backgroundLogMessage struct {
@@ -222,7 +224,11 @@ func startBackgroundProcess(cfg backgroundProcessConfig) error {
 		case <-ticker.C:
 			logMsgs, err := cfg.Exec(cfg.ProcCtx)
 			if err != nil && cfg.ErrChan != nil {
-				cfg.ErrChan <- err
+				select {
+				case cfg.ErrChan <- err:
+				default:
+					_ = logMessage(cfg.ProcCtx, cfg.LogChan, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("background err channel full, dropping error: %v", err)})
+				}
 			}
 			for _, logMsg := range logMsgs {
 				if !logMessage(cfg.ProcCtx, cfg.LogChan, logMsg) {

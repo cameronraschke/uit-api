@@ -348,7 +348,7 @@ func BlockIP(ip netip.Addr) {
 func CleanupExpiredBans() (totalDeleted int64, totalEntries int64, err error) {
 	lm, err := GetRateLimiters()
 	if err != nil || lm == nil {
-		return
+		return 0, 0, nil
 	}
 
 	now := time.Now()
@@ -367,7 +367,7 @@ func CleanupExpiredBans() (totalDeleted int64, totalEntries int64, err error) {
 func CleanupOldLimiterEntries() (totalDeleted int64, totalEntries int64, err error) {
 	lm, err := GetRateLimiters()
 	if err != nil || lm == nil {
-		return totalDeleted, totalEntries, types.CannotGetAppStateError
+		return 0, 0, nil
 	}
 	now := time.Now()
 	var wg sync.WaitGroup
@@ -386,10 +386,13 @@ func CleanupOldLimiterEntries() (totalDeleted int64, totalEntries int64, err err
 				if now.Sub(limiter.LastSeen) > limitersCleanupInterval {
 					delete(val.m, ip)
 					atomic.AddInt64(&totalDeleted, 1)
+				} else {
+					atomic.AddInt64(&totalEntries, 1)
 				}
-				atomic.AddInt64(&totalEntries, 1)
 			}
 		})
 	}
+
+	wg.Wait()
 	return totalDeleted, totalEntries, nil
 }
