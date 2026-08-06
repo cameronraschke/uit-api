@@ -922,7 +922,7 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 			// log.Debug("Authentication cookie '" + cookieName + "' is valid")
 		}
 
-		auth.ClearExpiredAuthSessions()
+		_, _ = auth.ClearExpiredAuthSessions()
 
 		currentSession, err := auth.GetAuthSessionByID(uitSessionIDCookie.Value)
 		if err != nil {

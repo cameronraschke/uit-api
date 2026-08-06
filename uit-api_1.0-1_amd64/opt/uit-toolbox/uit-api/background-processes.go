@@ -119,11 +119,8 @@ func initBackgroundProcesses(ctx context.Context, errChan chan error) {
 			ErrChan:     errChan,
 			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping auth map cleanup..."},
 			Exec: func(context.Context) (logMsg []backgroundLogMessage, err error) {
-				originalSessionCount := auth.GetAuthSessionCount()
-				auth.ClearExpiredAuthSessions()
-				newSessionCount := auth.GetAuthSessionCount()
-				sessionDiff := originalSessionCount - newSessionCount
-				return []backgroundLogMessage{{Level: slog.LevelInfo, Message: fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", newSessionCount, sessionDiff)}}, nil
+				activeSessions, expiredSessions := auth.ClearExpiredAuthSessions()
+				return []backgroundLogMessage{{Level: slog.LevelInfo, Message: fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", expiredSessions, activeSessions)}}, nil
 			},
 			ExecInterval: authMapCleanupInterval,
 		})

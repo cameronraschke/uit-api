@@ -115,6 +115,7 @@ func StartWebServer(ctx context.Context) error {
 	httpsRouter.Handle("GET /api/server_time", httpsFullAPIChain.ThenFunc(endpoints.GetServerTime))
 	httpsRouter.Handle("GET /api/new_transaction_uuid", httpsFullAPIChain.ThenFunc(endpoints.GetNewTransactionUUID))
 	httpsRouter.Handle("GET /admin/realtime-client-info", httpsFullAPIChain.ThenFunc(endpoints.GetRealtimeClientInfo))
+	httpsRouter.Handle("GET /admin/rate-limiter-info", httpsFullAPIChain.ThenFunc(endpoints.GetRateLimiterInfo))
 
 	// Overviews
 	httpsRouter.Handle("GET /api/client", httpsFullAPIChain.ThenFunc(endpoints.GetClientInfo))

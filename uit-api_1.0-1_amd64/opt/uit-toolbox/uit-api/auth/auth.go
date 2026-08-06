@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -33,9 +34,7 @@ func GetAuthSessionsCopy() map[string]types.AuthSession {
 	AuthSessions.Mu.RLock()
 	defer AuthSessions.Mu.RUnlock()
 	authMapCopy := make(map[string]types.AuthSession, len(AuthSessions.M))
-	for sessionID, value := range AuthSessions.M {
-		authMapCopy[sessionID] = value
-	}
+	maps.Copy(authMapCopy, AuthSessions.M)
 	return authMapCopy
 }
 
@@ -179,7 +178,7 @@ func DeleteAuthSessions(sessionIDs []string) []error {
 	return errSlice
 }
 
-func ClearExpiredAuthSessions() {
+func ClearExpiredAuthSessions() (activeSessions int, expiredSessions int) {
 	log := logger.GetLogger()
 	sessions, mu := GetAuthSessionsPtr()
 	curTime := time.Now()
@@ -189,10 +188,11 @@ func ClearExpiredAuthSessions() {
 
 	mu.RLock()
 	for sessionID, authSession := range sessions {
+		activeSessions++
 		if authSession.BasicToken.Expiry.Before(curTime) &&
 			authSession.BearerToken.Expiry.Before(curTime) {
 			expiredAuthSessions = append(expiredAuthSessions, sessionID)
-			stringsToLog = append(stringsToLog, "Auth session expired: "+authSession.BasicToken.IP.String()+" (TTL: "+fmt.Sprintf("%.2f", authSession.BearerToken.Expiry.Sub(curTime).Seconds())+")")
+			stringsToLog = append(stringsToLog, fmt.Sprintf("auth session expired (IP: %s, TTL: %.2fs)", authSession.BasicToken.IP.String(), authSession.BearerToken.Expiry.Sub(curTime).Seconds()))
 		}
 	}
 	mu.RUnlock()
@@ -206,6 +206,7 @@ func ClearExpiredAuthSessions() {
 			log.Warnf("%v", err)
 		}
 	}
+	return activeSessions, len(expiredAuthSessions)
 }
 
 func GetAuthSessionCount() int {

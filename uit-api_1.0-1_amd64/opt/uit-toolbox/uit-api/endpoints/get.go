@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"uit-api/appstate"
+	"uit-api/auth"
 	"uit-api/config"
 	"uit-api/database"
 	"uit-api/types"
@@ -1210,4 +1211,18 @@ func GetRealtimeClientInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	WriteJson(w, http.StatusOK, as)
+}
+
+func GetRateLimiterInfo(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetRateLimiterInfo"))
+
+	lm, err := auth.GetRateLimiters()
+	if err != nil {
+		log.Warn("Error fetching rate limiter info: " + err.Error())
+		WriteJsonError(w, http.StatusInternalServerError)
+		return
+	}
+
+	WriteJson(w, http.StatusOK, lm)
 }
