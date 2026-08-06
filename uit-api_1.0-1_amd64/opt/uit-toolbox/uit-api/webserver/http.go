@@ -17,7 +17,6 @@ func StartFileServer(ctx context.Context, serverHost string) error {
 		endpoints.PanicRecoveryMiddleware,
 		endpoints.LimitRequestSizeMiddleware,
 		endpoints.StoreClientIPMiddleware,
-		endpoints.CheckIPBlockedMiddleware,
 		endpoints.AllowIPRangeMiddleware("lan"),
 		endpoints.WebEndpointConfigMiddleware,
 		endpoints.TLSMiddleware,

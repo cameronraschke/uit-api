@@ -24,7 +24,6 @@ func StartWebServer(ctx context.Context) error {
 		endpoints.PanicRecoveryMiddleware,
 		endpoints.LimitRequestSizeMiddleware,
 		endpoints.StoreClientIPMiddleware,
-		endpoints.CheckIPBlockedMiddleware,
 		endpoints.AllowIPRangeMiddleware("any"),
 		endpoints.WebEndpointConfigMiddleware,
 		endpoints.TLSMiddleware,

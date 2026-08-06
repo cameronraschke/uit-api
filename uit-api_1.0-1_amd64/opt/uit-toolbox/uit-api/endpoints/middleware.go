@@ -120,24 +120,6 @@ func StoreClientIPMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		log := GetLoggerFromContext(req.Context()).With(slog.String("func", "CheckIPBlockedMiddleware"))
-		reqAddr, err := GetRequestIPFromContext(req.Context())
-		if err != nil {
-			log.Warn("Cannot retrieve request IP from context: " + err.Error())
-			WriteJsonError(w, http.StatusInternalServerError)
-			return
-		}
-		if isBlocked, blockedUntil := auth.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
-			// log.Infof("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil)
-			WriteJsonError(w, http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, req)
-	})
-}
-
 func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -153,7 +135,7 @@ func AllowIPRangeMiddleware(trafficSource string) func(http.Handler) http.Handle
 				WriteJsonError(w, http.StatusInternalServerError)
 				return
 			}
-			allowed, _, err := auth.IsIPAllowed(trafficSource, "", reqAddr)
+			allowed, err := auth.IsIPAllowed(trafficSource, "", reqAddr)
 			if err != nil {
 				log.Error("Cannot check if IP is allowed: " + err.Error())
 				WriteJsonError(w, http.StatusInternalServerError)
@@ -284,9 +266,9 @@ func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 			}
 
 			// IsClientRateLimited creates/updates a per-IP limiter entry and refreshes LastSeen.
-			limited, retryAt := lt.IsClientRateLimited(reqIP)
+			limited, _ := lt.IsClientRateLimited(reqIP)
 			if limited {
-				log.Debugf("client IP %s is rate limited, retry at: %v", reqIP.String(), retryAt)
+				// log.Debugf("client IP %s is rate limited, retry at: %v", reqIP.String(), retryAt)
 				WriteJsonError(w, http.StatusTooManyRequests)
 				return
 			}

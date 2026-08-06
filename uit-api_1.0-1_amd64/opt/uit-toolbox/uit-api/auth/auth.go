@@ -311,20 +311,20 @@ func GetServerSecret() ([]byte, error) {
 }
 
 // IP address checks
-func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (allowed bool, retryAt time.Time, err error) {
+func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (allowed bool, err error) {
 	ac, err := config.GetAppConfig()
 	if err != nil {
-		return allowed, retryAt, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
+		return allowed, fmt.Errorf("%w: %w", types.NilAppConfigError, err)
 	}
 	if !ipAddr.IsValid() {
-		return allowed, retryAt, fmt.Errorf("request IP is invalid or blocked")
+		return allowed, fmt.Errorf("request IP is invalid or blocked")
 	}
 
 	var lt LimiterType
 	if strings.TrimSpace(limiterType) != "" {
 		lt = ToLimiterType(limiterType)
 		if !lt.IsValid() {
-			return true, retryAt, fmt.Errorf("invalid limiter type: %s", limiterType)
+			return true, fmt.Errorf("invalid limiter type: %s", limiterType)
 		}
 	}
 
@@ -332,29 +332,23 @@ func IsIPAllowed(networkDomain string, limiterType string, ipAddr netip.Addr) (a
 	case "wan":
 		allowed, err = ipAllowedInRanges(ipAddr, &ac.AllowedWANMap)
 		if err != nil {
-			return allowed, retryAt, fmt.Errorf("error checking WAN IP ranges: %w", err)
+			return allowed, fmt.Errorf("error checking WAN IP ranges: %w", err)
 		}
 	case "lan":
 		allowed, err = ipAllowedInRanges(ipAddr, &ac.AllowedLANMap)
 		if err != nil {
-			return allowed, retryAt, fmt.Errorf("error checking LAN IP ranges: %w", err)
+			return allowed, fmt.Errorf("error checking LAN IP ranges: %w", err)
 		}
 	case "any":
 		allowed, err = ipAllowedInRanges(ipAddr, &ac.AllAllowedMap)
 		if err != nil {
-			return allowed, retryAt, fmt.Errorf("error checking IP ranges: %w", err)
+			return allowed, fmt.Errorf("error checking IP ranges: %w", err)
 		}
 	default:
-		return allowed, retryAt, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
+		return allowed, errors.New("invalid traffic type, must be 'wan', 'lan', or 'any'")
 	}
 
-	if lt.IsValid() {
-		isRateLimited, bannedUntil := lt.IsClientRateLimited(ipAddr)
-		if isRateLimited {
-			return false, bannedUntil, fmt.Errorf("client is rate limited until %s", bannedUntil.Format(time.RFC3339))
-		}
-	}
-	return allowed, retryAt, nil
+	return allowed, nil
 }
 
 func ipAllowedInRanges(ipAddr netip.Addr, ranges *sync.Map) (allowed bool, err error) {
