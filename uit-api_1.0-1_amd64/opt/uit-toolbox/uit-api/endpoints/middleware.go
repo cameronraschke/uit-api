@@ -266,9 +266,11 @@ func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 			}
 
 			// IsClientRateLimited creates/updates a per-IP limiter entry and refreshes LastSeen.
-			limited, _ := lt.IsClientRateLimited(reqIP)
+			limited, retryAt, isNewEntry := lt.IsClientRateLimited(reqIP)
 			if limited {
-				// log.Debugf("client IP %s is rate limited, retry at: %v", reqIP.String(), retryAt)
+				if isNewEntry {
+					log.Infof("client IP %s is rate limited, retry at: %v", reqIP.String(), retryAt)
+				}
 				WriteJsonError(w, http.StatusTooManyRequests)
 				return
 			}

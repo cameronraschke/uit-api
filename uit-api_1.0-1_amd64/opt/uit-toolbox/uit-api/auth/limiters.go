@@ -56,7 +56,7 @@ func InitRateLimiters() error {
 	if err != nil {
 		return fmt.Errorf("failed to get app config: %w", err)
 	}
-	
+
 	limiter.TimeoutDuration = ac.RateLimitTimeout
 	apiRateLimitInterval = ac.RateLimitInterval
 	apiRateLimitBurst = ac.RateLimitBurst
@@ -248,10 +248,10 @@ func (lt LimiterType) AttachToClientIP(ipAddr netip.Addr) error {
 	return nil
 }
 
-func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool, blockedUntil time.Time) {
+func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool, blockedUntil time.Time, isNewEntry bool) {
 	lm, err := GetRateLimiters()
 	if err != nil || lm == nil || ipAddr == (netip.Addr{}) || !ipAddr.IsValid() || !lt.IsValid() {
-		return false, blockedUntil
+		return false, blockedUntil, false
 	}
 	now := time.Now()
 
@@ -262,23 +262,23 @@ func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool
 		lm.BannedClientsMu.Lock()
 		lm.BannedClients[ipAddr] = banExpiry
 		lm.BannedClientsMu.Unlock()
-		return true, banExpiry
+		return true, banExpiry, false
 	}
 
 	if err := lt.AttachToClientIP(ipAddr); err != nil {
-		return false, blockedUntil
+		return false, blockedUntil, false
 	}
 
 	limiterMap, limiterMu := lt.GetAssociatedMap()
 	if limiterMap == nil || limiterMu == nil {
-		return false, blockedUntil
+		return false, blockedUntil, false
 	}
 
 	limiterMu.Lock()
 	ratelimiterEntry, exists := limiterMap[ipAddr]
 	if !exists {
 		limiterMu.Unlock()
-		return false, blockedUntil
+		return false, blockedUntil, false
 	}
 
 	if ratelimiterEntry.Limiter == nil {
@@ -291,7 +291,7 @@ func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool
 	limiterMu.Unlock()
 
 	if ratelimiter == nil {
-		return false, blockedUntil
+		return false, blockedUntil, false
 	}
 
 	// Use Allow() to check if the request can proceed immediately.
@@ -301,9 +301,10 @@ func (lt LimiterType) IsClientRateLimited(ipAddr netip.Addr) (isRateLimited bool
 		lm.BannedClientsMu.Lock()
 		lm.BannedClients[ipAddr] = banExpiry
 		lm.BannedClientsMu.Unlock()
-		return true, banExpiry
+		// the isBlocked block above will handle IPs that are already blocked, so this will be a new entry
+		return true, banExpiry, true
 	}
-	return false, blockedUntil
+	return false, blockedUntil, false
 }
 
 func IsIPBlocked(ipAddr netip.Addr) (isBlocked bool, blockedUntil time.Time) {
@@ -323,18 +324,6 @@ func IsIPBlocked(ipAddr netip.Addr) (isBlocked bool, blockedUntil time.Time) {
 		return true, blockedUntil
 	}
 	return false, blockedUntil
-}
-
-func BlockIP(ip netip.Addr) {
-	lm, err := GetRateLimiters()
-	if err != nil || lm == nil {
-		return
-	}
-	lm.BannedClientsMu.Lock()
-	defer lm.BannedClientsMu.Unlock()
-	if _, exists := lm.BannedClients[ip]; !exists {
-		lm.BannedClients[ip] = nextBanExpiry(time.Now())
-	}
 }
 
 func CleanupExpiredBans() (totalDeleted int64, totalEntries int64, err error) {
