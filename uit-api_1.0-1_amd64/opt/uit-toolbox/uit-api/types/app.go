@@ -46,7 +46,7 @@ type AppConfiguration struct {
 	APIRequestTimeout    time.Duration  `json:"UIT_WEB_API_REQUEST_TIMEOUT"`
 	FileRequestTimeout   time.Duration  `json:"UIT_WEB_FILE_REQUEST_TIMEOUT"`
 	RateLimitBurst       int            `json:"UIT_WEB_RATE_LIMIT_BURST"`
-	RateLimitInterval    float64        `json:"UIT_WEB_RATE_LIMIT_INTERVAL"`
+	RateLimitInterval    int            `json:"UIT_WEB_RATE_LIMIT_INTERVAL"`
 	RateLimitTimeout     time.Duration  `json:"UIT_WEB_RATE_LIMIT_BAN_DURATION"`
 	ClientDBUser         string         `json:"UIT_CLIENT_DB_USER"`
 	ClientDBPasswd       string         `json:"UIT_CLIENT_DB_PASSWD"`

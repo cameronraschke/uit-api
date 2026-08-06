@@ -16,7 +16,7 @@ const (
 )
 
 const (
-	RateLimitTimeout = 10 * time.Second
+	RateLimitTimeout = 1 * time.Minute
 )
 
 type RequestLimiters struct {
