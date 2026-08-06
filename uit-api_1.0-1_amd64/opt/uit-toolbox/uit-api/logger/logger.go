@@ -8,6 +8,49 @@ import (
 	"sync/atomic"
 )
 
+type Slogger struct {
+	*slog.Logger
+}
+
+func NewSlogger(l *slog.Logger) *Slogger {
+	if l == nil {
+		l = slog.Default()
+	}
+	return &Slogger{Logger: l}
+}
+
+func (l *Slogger) Debugf(format string, args ...any) {
+	l.Log(context.Background(), slog.LevelDebug, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) Infof(format string, args ...any) {
+	l.Log(context.Background(), slog.LevelInfo, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) Warnf(format string, args ...any) {
+	l.Log(context.Background(), slog.LevelWarn, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) Errorf(format string, args ...any) {
+	l.Log(context.Background(), slog.LevelError, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) Logf(ctx context.Context, level slog.Level, format string, args ...any) {
+	l.Log(ctx, level, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) WithAttrs(attrs ...any) *Slogger {
+	return &Slogger{Logger: l.Logger.With(attrs...)}
+}
+
+func (l *Slogger) WithGroup(name string) *Slogger {
+	return &Slogger{Logger: l.Logger.WithGroup(name)}
+}
+
+func (l *Slogger) With(args ...any) *Slogger {
+	return &Slogger{Logger: l.Logger.With(args...)}
+}
+
 type logLevelRangeHandler struct {
 	handler  slog.Handler
 	minLevel slog.Level
@@ -15,7 +58,7 @@ type logLevelRangeHandler struct {
 }
 
 var (
-	appLoggerInstance atomic.Pointer[slog.Logger]
+	appLoggerInstance atomic.Pointer[Slogger]
 )
 
 func InitLogger() error {
@@ -63,20 +106,21 @@ func InitLogger() error {
 	multiHandler := slog.NewMultiHandler(stdoutTextHandler, stderrTextHandler)
 	logger := slog.New(multiHandler)
 	slog.SetDefault(logger)
-	appLoggerInstance.Store(logger)
+	appLoggerInstance.Store(NewSlogger(logger))
 	return nil
 }
 
-func GetLogger() *slog.Logger {
-	logger := appLoggerInstance.Load()
-	if logger == nil {
+func GetLogger() *Slogger {
+	slogger := appLoggerInstance.Load()
+	if slogger == nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] logger is nil in GetLogger, returning default logger")
 		newLogger := newDefaultLogger()
-		appLoggerInstance.Store(newLogger)
+		newSlogger := NewSlogger(newLogger)
+		appLoggerInstance.Store(newSlogger)
 		slog.SetDefault(newLogger)
-		return newLogger
+		return newSlogger
 	}
-	return logger
+	return slogger
 }
 
 func newLevelRangeHandler(handler slog.Handler, minLevel slog.Level, maxLevel slog.Level) slog.Handler {

@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
+	"uit-api/logger"
 )
 
 func runServerLifecycle(
 	ctx context.Context,
-	log *slog.Logger,
+	log *logger.Slogger,
 	serverName string,
 	shutdownTimeout time.Duration,
 	serveFn func() error,

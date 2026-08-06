@@ -241,7 +241,6 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 }
 
 func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []string, err error) {
-	log := logger.GetLogger().With(slog.String("func", "writeLastHeardToDB"))
 	backgroundCtx, cancel := context.WithTimeout(parentCtx, 45*time.Second)
 	defer cancel()
 
@@ -273,7 +272,7 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []st
 		updateCtx, updateCancel := context.WithTimeout(backgroundCtx, 3*time.Second)
 		if err := database.UpdateClientLastHeard(updateCtx, tag, data.LastHeard); err != nil {
 			failed++
-			log.Error(fmt.Sprintf("Failed to write last heard for tag '%d': %s", tag, err.Error()))
+			logMsg = append(logMsg, fmt.Sprintf("Failed to write last heard for tag '%d': %s", tag, err.Error()))
 			updateCancel()
 			continue
 		}
@@ -282,7 +281,7 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []st
 		if d > 0 {
 			select {
 			case <-backgroundCtx.Done():
-				log.Warn("Stopping last-heard write loop early due to context cancellation")
+				logMsg = append(logMsg, "Stopping last-heard write loop early due to context cancellation")
 				return logMsg, nil
 			case <-time.After(d):
 				// Continue to next write interval.
@@ -290,9 +289,9 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []st
 		}
 	}
 
-	log.Info(fmt.Sprintf("Finished writing last-heard values (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeData), attempted, succeeded, failed))
+	logMsg = append(logMsg, fmt.Sprintf("Finished writing persistent last-heard values (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeData), attempted, succeeded, failed))
 	if attempted == 0 {
-		log.Warn("No DB writes were attempted for last_heard because all realtime entries had missing/zero last_heard data")
+		logMsg = append(logMsg, "No DB writes were attempted for last_heard because all realtime entries had missing/zero last_heard data")
 	}
 
 	return logMsg, nil

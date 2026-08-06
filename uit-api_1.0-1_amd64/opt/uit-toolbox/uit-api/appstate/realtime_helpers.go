@@ -123,7 +123,8 @@ func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
 	if lastHeard == nil || lastHeard.IsZero() {
-		return fmt.Errorf("lastHeard is nil")
+		// return fmt.Errorf("lastHeard is nil")
+		return nil // No need to update if lastHeard is nil or zero, just skip
 	}
 
 	appState, err := GetAppState()
@@ -150,7 +151,8 @@ func ReplaceClientRealtimeData(tag int64, val *types.JobQueueRealtimeData) error
 		return fmt.Errorf("JobQueueRealtimeData struct is nil")
 	}
 	if val.LastHeard == nil || val.LastHeard.IsZero() {
-		return fmt.Errorf("lastHeard is nil, skipping update for tag %d", tag)
+		// return fmt.Errorf("lastHeard is nil, skipping update for tag %d", tag)
+		return nil // No need to update if lastHeard is nil or zero, just skip
 	}
 
 	appState, err := GetAppState()

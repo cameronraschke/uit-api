@@ -102,11 +102,11 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	}
 
 	sessionCount := auth.GetAuthSessionCount()
-	log.Info("New auth session created. Total sessions: " + strconv.Itoa(int(sessionCount)))
+	log.Infof("New auth session created. Total sessions: %d", sessionCount)
 
 	authSessionCookies, err := UpdateAndGetAuthSession(authSession, true)
 	if err != nil {
-		log.Error("Cannot get auth cookies for response: " + err.Error())
+		log.Errorf("Cannot get auth cookies for response: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -129,41 +129,41 @@ func SetClientMemoryUsageKB(w http.ResponseWriter, req *http.Request) {
 
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var memInfoRequest types.MemoryDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &memInfoRequest); err != nil {
-		log.Warn(types.JSONUnmarshalError.Error() + ": " + err.Error())
+		log.Warnf("%v: %v", types.JSONUnmarshalError, err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	memoryData, err := memInfoRequest.ToDTO()
 	if err != nil {
-		log.Warn("Invalid memory data request: " + err.Error())
+		log.Warnf("Invalid memory data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData == nil {
-		log.Warn("Memory data request is nil after mapping to DTO")
+		log.Warnf("Memory data request is nil after mapping to DTO")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData.TotalUsageKB <= 0 {
-		log.Warn("Invalid memory usage value")
+		log.Warnf("Invalid memory usage value")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientMemoryUsageKB(req.Context(), *memoryData); err != nil {
-		log.Error("Failed to update client memory usage: " + err.Error())
+		log.Errorf("Failed to update client memory usage: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -175,41 +175,41 @@ func SetClientMemoryCapacityKB(w http.ResponseWriter, req *http.Request) {
 
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var memInfoRequest types.MemoryDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &memInfoRequest); err != nil {
-		log.Warn(types.JSONUnmarshalError.Error() + ": " + err.Error())
+		log.Warnf("%v: %v", types.JSONUnmarshalError, err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	memoryData, err := memInfoRequest.ToDTO()
 	if err != nil {
-		log.Warn("Invalid memory data request: " + err.Error())
+		log.Warnf("Invalid memory data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData == nil {
-		log.Warn("Memory data request is nil after mapping to DTO")
+		log.Warnf("Memory data request is nil after mapping to DTO")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if memoryData.TotalCapacityKB <= 0 {
-		log.Warn("Invalid memory capacity value")
+		log.Warnf("Invalid memory capacity value")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientMemoryCapacityKB(req.Context(), *memoryData); err != nil {
-		log.Error("Failed to update client memory capacity: " + err.Error())
+		log.Errorf("Failed to update client memory capacity: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -220,32 +220,32 @@ func SetClientCPUUsage(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUUsage"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var cpuDataRequest types.CPUDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &cpuDataRequest); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	cpuDTO, err := cpuDataRequest.ToDTO()
 	if err != nil {
-		log.Warn("Invalid CPU data request: " + err.Error())
+		log.Warnf("Invalid CPU data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientCPUUsage(req.Context(), cpuDTO); err != nil {
-		log.Error("Failed to update client CPU usage: " + err.Error())
+		log.Errorf("Failed to update client CPU usage: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -258,32 +258,32 @@ func SetClientCPUMHz(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientCPUMHz"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var cpuUpdateRequest types.CPUDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &cpuUpdateRequest); err != nil {
-		log.Warn(types.JSONUnmarshalError.Error() + ": " + err.Error())
+		log.Warnf("%v: %v", types.JSONUnmarshalError, err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	cpuData, err := cpuUpdateRequest.ToDTO()
 	if err != nil {
-		log.Warn("Invalid CPU data request: " + err.Error())
+		log.Warnf("Invalid CPU data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientCPUMHz(ctx, cpuData); err != nil {
-		log.Error("Failed to update client CPU MHz: " + err.Error())
+		log.Errorf("Failed to update client CPU MHz: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -294,36 +294,36 @@ func SetClientHealth(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientHealth"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
-		log.Warn("Invalid UTF-8 in request body")
+		log.Warnf("Invalid UTF-8 in request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var clientHealth types.ClientHealthUpdateRequest
 	if err := json.Unmarshal(requestBody, &clientHealth); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	partialDTO, err := clientHealth.ToDTO()
 	if err != nil {
-		log.Warn("Unable to map client health update: %w" + err.Error())
+		log.Warnf("Unable to map client health update: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	transactionUUID, err := uuid.NewV7()
 	if err != nil {
-		log.Error("Failed to generate transaction UUID: " + err.Error())
+		log.Errorf("Failed to generate transaction UUID: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -334,7 +334,7 @@ func SetClientHealth(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := database.UpdateClientHealthUpdate(req.Context(), transactionUUID, partialDTO); err != nil {
-		log.Error("database error: " + err.Error())
+		log.Errorf("database error: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -345,32 +345,32 @@ func SetClientCPUTemperature(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUTemperature"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	var cpuDataRequest types.CPUDataUpdateRequest
 	if err := json.Unmarshal(requestBody, &cpuDataRequest); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	cpuData, err := cpuDataRequest.ToDTO()
 	if err != nil {
-		log.Warn("Invalid CPU data request: " + err.Error())
+		log.Warnf("Invalid CPU data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := database.UpsertClientCPUTemperature(req.Context(), cpuData); err != nil {
-		log.Error("Failed to update client CPU temperature: " + err.Error())
+		log.Errorf("Failed to update client CPU temperature: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -378,55 +378,53 @@ func SetClientCPUTemperature(w http.ResponseWriter, req *http.Request) {
 }
 
 func SetClientNetworkUsage(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx)
-	log = log.With(slog.String("func", "SetClientNetworkUsage"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientNetworkUsage"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
-		log.Warn("Invalid UTF-8 in request body")
+		log.Warnf("Invalid UTF-8 in request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var networkData types.NetworkData
 	if err := json.Unmarshal(requestBody, &networkData); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(networkData.Tagnumber); err != nil {
-		log.Warn("Invalid tagnumber: " + err.Error())
+		log.Warnf("Invalid tagnumber: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if networkData.NetworkUsage == nil {
-		log.Warn("Request is missing network usage")
+		log.Warnf("Request is missing network usage")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if networkData.LinkSpeed == nil {
-		log.Warn("Request is missing link speed")
+		log.Warnf("Request is missing link speed")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	updateRepo, err := database.NewUpdateRepo()
 	if err != nil {
-		log.Error("No database connection available for updating client network usage")
+		log.Errorf("No database connection available for updating client network usage")
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	if err := updateRepo.UpdateClientNetworkUsage(ctx, &networkData); err != nil {
-		log.Error("Failed to update client network usage: " + err.Error())
+	if err := updateRepo.UpdateClientNetworkUsage(req.Context(), &networkData); err != nil {
+		log.Errorf("Failed to update client network usage: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -434,38 +432,36 @@ func SetClientNetworkUsage(w http.ResponseWriter, req *http.Request) {
 }
 
 func SetClientUptime(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx)
-	log = log.With(slog.String("func", "SetClientUptime"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientUptime"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
-		log.Warn("Invalid UTF-8 in request body")
+		log.Warnf("Invalid UTF-8 in request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	var uptimeData types.ClientUptime
 	if err := json.Unmarshal(requestBody, &uptimeData); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(uptimeData.Tagnumber); err != nil {
-		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err))
+		log.Warnf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if uptimeData.ClientAppUptime == 0 && uptimeData.SystemUptime == 0 {
-		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "uptime data", "both clientAppUptime and systemUptime have zero values"))
+		log.Warnf("%v: %s (%v)", types.InvalidRequestFieldError, "uptime data", "both clientAppUptime and systemUptime have zero values")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -473,7 +469,7 @@ func SetClientUptime(w http.ResponseWriter, req *http.Request) {
 	if uptimeData.ClientAppUptime != 0 {
 		clientAppUptime := uptimeData.ClientAppUptime.Duration()
 		if err := appstate.UpdateClientAppUptime(uptimeData.Tagnumber, clientAppUptime); err != nil {
-			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientAppUptime", err))
+			log.Errorf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientAppUptime", err)
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
@@ -482,7 +478,7 @@ func SetClientUptime(w http.ResponseWriter, req *http.Request) {
 	if uptimeData.SystemUptime != 0 {
 		systemUptime := uptimeData.SystemUptime.Duration()
 		if err := appstate.UpdateClientSystemUptime(uptimeData.Tagnumber, systemUptime); err != nil {
-			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "systemUptime", err))
+			log.Errorf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "systemUptime", err)
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
@@ -496,17 +492,17 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientLastHeard"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
-		log.Warn("Invalid UTF-8 in request body")
+		log.Warnf("Invalid UTF-8 in request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -515,32 +511,32 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 		LastHeard time.Time `json:"last_heard"`
 	}
 	if err := json.Unmarshal(requestBody, &lastHeardData); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// Check if tagnumber is valid
 	if err := types.IsTagnumberInt64Valid(lastHeardData.Tagnumber); err != nil {
-		log.Warn(fmt.Sprintf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err))
+		log.Warnf("%v: %s (%v)", types.InvalidRequestFieldError, "tagnumber", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	// Check if lastHeard is valid
 	if lastHeardData.LastHeard.IsZero() || lastHeardData.LastHeard.Unix() <= 0 {
-		log.Warn(fmt.Sprintf("%v '%s': %v", types.InvalidRequestFieldError, "lastHeard", "value is zero"))
+		log.Warnf("%v '%s': %v", types.InvalidRequestFieldError, "lastHeard", "value is zero")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if lastHeardData.LastHeard.UTC().After(time.Now().UTC().Add(1 * time.Minute)) {
-		log.Warn(fmt.Sprintf("%v '%s': %v", types.InvalidRequestFieldError, "lastHeard", "value is in the future"))
+		log.Warnf("%v '%s': %v", types.InvalidRequestFieldError, "lastHeard", "value is in the future")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	clientUUID, err := appstate.GetRealtimeClientUUID(lastHeardData.Tagnumber)
 	if err != nil {
-		log.Info(fmt.Sprintf("error retrieving realtime data for tag '%d': %v", lastHeardData.Tagnumber, err))
+		log.Infof("error retrieving realtime data for tag '%d': %v", lastHeardData.Tagnumber, err)
 		if !errors.Is(err, types.ErrClientNotFound) && !errors.Is(err, types.ErrClientUUIDMissingError) {
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
@@ -556,13 +552,13 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 		}
 		clientUUID, err = database.GetClientUUIDByTag(ctx, pgxPool, lastHeardData.Tagnumber)
 		if err != nil {
-			log.Error(fmt.Sprintf("%v '%d': %v", types.ErrClientUUIDNotFoundInDB, lastHeardData.Tagnumber, err))
+			log.Errorf("%v '%d': %v", types.ErrClientUUIDNotFoundInDB, lastHeardData.Tagnumber, err)
 			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
-		log.Info(fmt.Sprintf("updating client UUID '%s' for tag '%d' from database", clientUUID.String(), lastHeardData.Tagnumber))
+		log.Infof("updating client UUID '%s' for tag '%d' from database", clientUUID.String(), lastHeardData.Tagnumber)
 		if err := appstate.SetRealtimeClientUUID(lastHeardData.Tagnumber, clientUUID); err != nil {
-			log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientUUID", err))
+			log.Errorf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientUUID", err)
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
@@ -570,7 +566,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 
 	lastHeard := lastHeardData.LastHeard.UTC()
 	if err := appstate.UpdateClientLastHeardInAppState(lastHeardData.Tagnumber, &lastHeard); err != nil {
-		log.Error(fmt.Sprintf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "lastHeard", err))
+		log.Errorf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "lastHeard", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -583,50 +579,50 @@ func UpdateClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(ctx).With(slog.String("func", "UpdateClientBatteryChargePcnt"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warn("Cannot read request body: " + err.Error())
+		log.Warnf("Cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warn("Empty request body")
+		log.Warnf("Empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
-		log.Warn("Invalid UTF-8 in request body")
+		log.Warnf("Invalid UTF-8 in request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	batteryData := new(types.BatteryDataRequest)
 	if err := json.Unmarshal(requestBody, batteryData); err != nil {
-		log.Warn("Cannot unmarshal JSON: " + err.Error())
+		log.Warnf("Cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	if err := types.IsTagnumberInt64Valid(batteryData.Tagnumber); err != nil {
-		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err))
+		log.Warnf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if batteryData.BatteryChargePcnt == nil {
-		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "batteryChargePcnt", "value is nil or zero"))
+		log.Warnf("%v for '%s': %v", types.InvalidRequestFieldError, "batteryChargePcnt", "value is nil or zero")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if *batteryData.BatteryChargePcnt < 0 || *batteryData.BatteryChargePcnt > 100 {
-		log.Warn("Battery percentage out of valid range (0-100)")
+		log.Warnf("Battery percentage out of valid range (0-100)")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	updateRepo, err := database.NewUpdateRepo()
 	if err != nil {
-		log.Error(fmt.Sprintf("%v while updating '%s': %v", types.DatabaseConnError, "clientBatteryChargePcnt", err))
+		log.Errorf("%v while updating '%s': %v", types.DatabaseConnError, "clientBatteryChargePcnt", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 	if err := updateRepo.UpdateClientBatteryChargePcnt(ctx, batteryData.Tagnumber, batteryData.BatteryChargePcnt); err != nil {
-		log.Error(fmt.Sprintf("%v '%s': %v", types.FailedToUpdateDatabaseValueError, "clientBatteryChargePcnt", err))
+		log.Errorf("%v '%s': %v", types.FailedToUpdateDatabaseValueError, "clientBatteryChargePcnt", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}

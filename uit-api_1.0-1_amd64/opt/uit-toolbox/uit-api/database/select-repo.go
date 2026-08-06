@@ -2703,8 +2703,8 @@ func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData
 			ids.system_serial,
 			live_os_data.last_heard,
 			TRUE,
-			live_os_data.system_uptime,
-			live_os_data.client_app_uptime
+			COALESCE(live_os_data.system_uptime, 0) AS system_uptime,
+			COALESCE(live_os_data.client_app_uptime, 0) AS client_app_uptime
 		FROM ids
 		INNER JOIN live_os_data ON ids.uuid = live_os_data.client_uuid
 	;`
@@ -2722,12 +2722,12 @@ func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData
 		var jobData types.JobQueueRealtimeData
 		if err := rows.Scan(
 			&jobData.ClientUUID,
-			toNullInt64(jobData.Tagnumber),
-			toNullString(jobData.SerialNumber),
-			ptrToNullTime(jobData.LastHeard),
-			jobData.LastHeardUpdatedInDB,
-			toNullDuration(jobData.SystemUptime),
-			toNullDuration(jobData.AppUptime),
+			&jobData.Tagnumber,
+			&jobData.SerialNumber,
+			&jobData.LastHeard,
+			&jobData.LastHeardUpdatedInDB,
+			&jobData.SystemUptime,
+			&jobData.AppUptime,
 		); err != nil {
 			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
 		}

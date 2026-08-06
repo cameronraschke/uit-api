@@ -57,13 +57,7 @@ func PanicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log := GetLoggerFromContext(req.Context())
-				if log == nil {
-					fmt.Fprintln(os.Stderr, "Error getting logger from context in PanicRecoveryMiddleware: logger is nil")
-				} else {
-					log = log.With(slog.String("func", "PanicRecoveryMiddleware"))
-					log.Error(fmt.Sprintf("Panic recovered: %v\n%s", err, string(debug.Stack())))
-				}
+				fmt.Fprintf(os.Stderr, "Panic recovered: %v\n%s", err, string(debug.Stack()))
 				WriteJsonError(w, http.StatusInternalServerError)
 			}
 		}()
