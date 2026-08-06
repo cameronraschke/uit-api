@@ -92,6 +92,8 @@ func InitRateLimiters() error {
 		LastSeen: time.Time{},
 	}
 
+	limiter.TimeoutDuration = types.RateLimitTimeout
+
 	rateLimiterInstance.Store(limiter)
 	return nil
 }
