@@ -272,6 +272,9 @@ func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtime
 	clientDataCopy = make(map[int64]types.JobQueueRealtimeData, len(appState.ClientRealtimeData))
 	maps.Copy(clientDataCopy, appState.ClientRealtimeData)
 
+	if len(clientDataCopy) == 0 {
+		return nil, fmt.Errorf("no client realtime data found")
+	}
 	return clientDataCopy, nil
 }
 

@@ -22,8 +22,16 @@ const (
 	writeLastHeardInterval        = 1 * time.Minute
 )
 
-func logMessage(ctx context.Context, logChan chan<- string, msg string) bool {
+type backgroundLogMessage struct {
+	Level   slog.Level
+	Message string
+}
+
+func logMessage(ctx context.Context, logChan chan<- backgroundLogMessage, msg backgroundLogMessage) bool {
 	if logChan == nil {
+		return false
+	}
+	if msg.Message == "" {
 		return false
 	}
 	select {
@@ -37,38 +45,192 @@ func logMessage(ctx context.Context, logChan chan<- string, msg string) bool {
 }
 
 type backgroundProcessConfig struct {
-	ErrCtx   context.Context
-	LogChan  chan<- string
-	Interval time.Duration
-	StopMsg  string
-	Run      func(context.Context) ([]string, error)
-	OnErr    func(error) error
+	ProcCtx      context.Context
+	LogChan      chan<- backgroundLogMessage
+	ErrChan      chan<- error
+	ShutdownMsg  backgroundLogMessage
+	Exec         func(context.Context) ([]backgroundLogMessage, error)
+	ExecInterval time.Duration
 }
 
-func runBackgroundProcess(cfg backgroundProcessConfig) error {
-	ticker := time.NewTicker(cfg.Interval)
+func initBackgroundProcesses(ctx context.Context, errChan chan error) {
+	errGroup, errCtx := errgroup.WithContext(ctx)
+
+	log := logger.GetLogger().With(slog.String("func", "initBackgroundProcesses"))
+	logChan := make(chan backgroundLogMessage, 100) // Buffered channel for log messages
+
+	// Listen to logChan for log messages
+	errGroup.Go(func() error {
+		for {
+			select {
+			case msg, ok := <-logChan:
+				if !ok {
+					log.Infof("(background) log channel closed, discarding message")
+					return nil
+				}
+				log.Logf(context.Background(), msg.Level, "(background): %s", msg.Message)
+			case <-errCtx.Done():
+				log.Infof("(background) log channel closed due to context cancellation: %v", errCtx.Err())
+				return nil
+			}
+		}
+	})
+
+	// Listen to errChan for errors
+	errGroup.Go(func() error {
+		select {
+		case err, ok := <-errChan:
+			if !ok {
+				log.Infof("(background) error channel closed, discarding message")
+				return nil
+			}
+			log.Warnf("error received on errChan: %v", err)
+			return err
+		case <-errCtx.Done():
+			log.Infof("(background) error channel closed due to context cancellation: %v", errCtx.Err())
+			return nil
+		}
+	})
+
+	// Start log buffer flush goroutine
+	errGroup.Go(func() error {
+		return startBackgroundProcess(backgroundProcessConfig{
+			ProcCtx:     errCtx,
+			LogChan:     logChan,
+			ErrChan:     errChan,
+			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping flushing log buffers..."},
+			Exec: func(context.Context) (logMsg []backgroundLogMessage, err error) {
+				if err := logger.FlushLogBuffers(); err != nil {
+					logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("error flushing log buffers: %v", err)})
+				}
+				return logMsg, err
+			},
+			ExecInterval: flushLogBufferInterval,
+		})
+	})
+
+	// Start auth map cleanup goroutine
+	errGroup.Go(func() error {
+		return startBackgroundProcess(backgroundProcessConfig{
+			ProcCtx:     errCtx,
+			LogChan:     logChan,
+			ErrChan:     errChan,
+			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping auth map cleanup..."},
+			Exec: func(context.Context) (logMsg []backgroundLogMessage, err error) {
+				originalSessionCount := auth.GetAuthSessionCount()
+				auth.ClearExpiredAuthSessions()
+				newSessionCount := auth.GetAuthSessionCount()
+				sessionDiff := originalSessionCount - newSessionCount
+				return []backgroundLogMessage{{Level: slog.LevelInfo, Message: fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", newSessionCount, sessionDiff)}}, nil
+			},
+			ExecInterval: authMapCleanupInterval,
+		})
+	})
+
+	// Start last_heard write goroutine
+	errGroup.Go(func() error {
+		return startBackgroundProcess(backgroundProcessConfig{
+			ProcCtx:     errCtx,
+			LogChan:     logChan,
+			ErrChan:     errChan,
+			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping updating last_heard values..."},
+			Exec: func(workerCtx context.Context) ([]backgroundLogMessage, error) {
+				return writeLastHeardToDB(workerCtx, 1*time.Second) // 1s sleep between writes during regular operation
+			},
+			ExecInterval: writeLastHeardInterval,
+		})
+	})
+
+	// Start rate limiter cleanup goroutine
+	errGroup.Go(func() error {
+		return startBackgroundProcess(backgroundProcessConfig{
+			ProcCtx:     errCtx,
+			LogChan:     logChan,
+			ErrChan:     errChan,
+			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping rate limiter cleanup..."},
+			Exec: func(context.Context) (logMsg []backgroundLogMessage, err error) {
+				entriesDeleted, totalEntries, err := auth.CleanupOldLimiterEntries()
+				if err != nil {
+					logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("error cleaning up expired rate limiter entries: %v", err)})
+				}
+				logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelInfo, Message: fmt.Sprintf("rate limiter cleanup done (expired=%d, active=%d)", entriesDeleted, totalEntries)})
+				return logMsg, err
+			},
+			ExecInterval: rateLimiterCleanupInterval,
+		})
+	})
+
+	// Start banned clients cleanup goroutine
+	errGroup.Go(func() error {
+		return startBackgroundProcess(backgroundProcessConfig{
+			ProcCtx:     errCtx,
+			LogChan:     logChan,
+			ErrChan:     errChan,
+			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping banned clients cleanup..."},
+			Exec: func(context.Context) (logMsg []backgroundLogMessage, err error) {
+				deletedCount, totalCount, err := auth.CleanupExpiredBans()
+				if err != nil {
+					logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("error cleaning up expired banned clients entries: %v", err)})
+				}
+				logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelInfo, Message: fmt.Sprintf("banned clients cleanup done (expired=%d, active=%d)", deletedCount, totalCount)})
+				return logMsg, err
+			},
+			ExecInterval: bannedClientsCleanupInterval,
+		})
+	})
+
+	// Start offline clients cleanup goroutine
+	errGroup.Go(func() error {
+		return startBackgroundProcess(backgroundProcessConfig{
+			ProcCtx:     errCtx,
+			LogChan:     logChan,
+			ErrChan:     errChan,
+			ShutdownMsg: backgroundLogMessage{Level: slog.LevelInfo, Message: "stopping cleanup of offline clients' live screenshots..."},
+			Exec: func(context.Context) (logMsg []backgroundLogMessage, err error) {
+				entriesDeleted, entriesSkipped, totalEntries := appstate.ClearOfflineLiveImageBytes()
+				logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelInfo, Message: fmt.Sprintf("live screenshot cleanup done (deleted=%d, skipped=%d, total=%d)", entriesDeleted, entriesSkipped, totalEntries)})
+				return logMsg, nil
+			},
+			ExecInterval: liveScreenshotCleanupInterval,
+		})
+	})
+
+	log.Infof("background processes started")
+	if err := errGroup.Wait(); err != nil {
+		log.Errorf("background processes exited with error: %v", err)
+	} else {
+		log.Infof("background processes exited without error")
+	}
+}
+
+func startBackgroundProcess(cfg backgroundProcessConfig) error {
+	ticker := time.NewTicker(cfg.ExecInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-cfg.ErrCtx.Done():
-			if !logMessage(cfg.ErrCtx, cfg.LogChan, cfg.StopMsg) {
-				if err := cfg.ErrCtx.Err(); err != nil {
-					return nil // No error on regular shutdown
+		case <-cfg.ProcCtx.Done():
+			if !logMessage(cfg.ProcCtx, cfg.LogChan, cfg.ShutdownMsg) {
+				if err := cfg.ProcCtx.Err(); err != nil {
+					if err != context.Canceled {
+						return err // Return the error if not context.Canceled
+					}
+					return nil // Return nil on regular shutdown
 				}
 			}
 			return nil
 		case <-ticker.C:
-			logMsgs, err := cfg.Run(cfg.ErrCtx)
-			if err != nil && cfg.OnErr != nil {
-				if onErrResult := cfg.OnErr(err); onErrResult != nil {
-					return onErrResult
-				}
+			logMsgs, err := cfg.Exec(cfg.ProcCtx)
+			if err != nil && cfg.ErrChan != nil {
+				cfg.ErrChan <- err
 			}
 			for _, logMsg := range logMsgs {
-				if !logMessage(cfg.ErrCtx, cfg.LogChan, logMsg) {
-					if err := cfg.ErrCtx.Err(); err != nil {
-						return nil // No error on regular shutdown
+				if !logMessage(cfg.ProcCtx, cfg.LogChan, logMsg) {
+					if err := cfg.ProcCtx.Err(); err != nil {
+						if err != context.Canceled {
+							return err // Return the error if not context.Canceled
+						}
+						return nil // Return nil on regular shutdown
 					}
 				}
 			}
@@ -76,203 +238,38 @@ func runBackgroundProcess(cfg backgroundProcessConfig) error {
 	}
 }
 
-func startBackgroundProcesses(ctx context.Context, errChan chan error) {
-	errGroup, errCtx := errgroup.WithContext(ctx)
-
-	log := logger.GetLogger().With(slog.String("func", "startBackgroundProcesses"))
-	logChan := make(chan string, 10) // Buffered channel for log messages
-
-	// Listen for log messages from background processes
-	errGroup.Go(func() error {
-		for {
-			select {
-			case msg, ok := <-logChan:
-				if !ok {
-					log.Infof("Background process log channel closed")
-					return nil
-				}
-				log.Infof("(Background): %s", msg)
-			case <-errCtx.Done():
-				log.Infof("Background process log channel closed due to context cancellation")
-				return nil
-			}
-		}
-	})
-
-	// Listen for errors on errChan
-	errGroup.Go(func() error {
-		select {
-		case err := <-errChan:
-			log.Infof("Background process error, exiting: %v", err)
-			return err
-		case <-errCtx.Done():
-			log.Infof("Background processes stopping...")
-			return nil
-		}
-	})
-
-	// Start auth map cleanup goroutine
-	errGroup.Go(func() error {
-		return runBackgroundProcess(backgroundProcessConfig{
-			ErrCtx:   errCtx,
-			LogChan:  logChan,
-			Interval: authMapCleanupInterval,
-			StopMsg:  "Auth map cleanup goroutine stopping...",
-			Run: func(context.Context) (logMsg []string, err error) {
-				originalSessionCount := auth.GetAuthSessionCount()
-				auth.ClearExpiredAuthSessions()
-				newSessionCount := auth.GetAuthSessionCount()
-				sessionDiff := originalSessionCount - newSessionCount
-				return []string{fmt.Sprintf("auth session cleanup done (expired=%d, active=%d)", newSessionCount, sessionDiff)}, nil
-			},
-			OnErr: func(err error) error {
-				log.Errorf("Error during auth map cleanup: %v", err)
-				return err
-			},
-		})
-	})
-
-	// Start last_heard write goroutine
-	errGroup.Go(func() error {
-		return runBackgroundProcess(backgroundProcessConfig{
-			ErrCtx:   errCtx,
-			LogChan:  logChan,
-			Interval: writeLastHeardInterval,
-			StopMsg:  "Last heard goroutine stopping...",
-			Run: func(workerCtx context.Context) ([]string, error) {
-				return writeLastHeardToDB(workerCtx, 1*time.Second) // 1s sleep between writes during regular operation
-			},
-			OnErr: func(err error) error {
-				log.Errorf("Error writing last_heard to DB: %v", err)
-				return err
-			},
-		})
-	})
-
-	// Start rate limiter cleanup goroutine
-	errGroup.Go(func() error {
-		return runBackgroundProcess(backgroundProcessConfig{
-			ErrCtx:   errCtx,
-			LogChan:  logChan,
-			Interval: rateLimiterCleanupInterval,
-			StopMsg:  "Rate limiter cleanup goroutine stopping...",
-			Run: func(context.Context) (logMsg []string, err error) {
-				entriesDeleted, totalEntries, err := auth.CleanupOldLimiterEntries()
-				if err != nil {
-					logMsg = append(logMsg, fmt.Sprintf("error cleaning up old rate limiter entries: %v", err))
-				}
-				logMsg = append(logMsg, fmt.Sprintf("rate limiter cleanup done (expired=%d, active=%d)", entriesDeleted, totalEntries))
-				return logMsg, err
-			},
-			OnErr: func(err error) error {
-				log.Errorf("Error during rate limiter cleanup: %v", err)
-				return err
-			},
-		})
-	})
-
-	// Start banned clients cleanup goroutine
-	errGroup.Go(func() error {
-		return runBackgroundProcess(backgroundProcessConfig{
-			ErrCtx:   errCtx,
-			LogChan:  logChan,
-			Interval: bannedClientsCleanupInterval,
-			StopMsg:  "Banned clients cleanup goroutine stopping...",
-			Run: func(context.Context) (logMsg []string, err error) {
-				deletedCount, totalCount, err := auth.CleanupExpiredBans()
-				if err != nil {
-					logMsg = append(logMsg, fmt.Sprintf("error cleaning up expired banned clients: %v", err))
-				}
-				logMsg = append(logMsg, fmt.Sprintf("banned clients cleanup done (expired=%d, active=%d)", deletedCount, totalCount))
-				return logMsg, err
-			},
-			OnErr: func(err error) error {
-				log.Errorf("Error during banned clients cleanup: %v", err)
-				return err
-			},
-		})
-	})
-
-	// Start offline clients cleanup goroutine
-	errGroup.Go(func() error {
-		return runBackgroundProcess(backgroundProcessConfig{
-			ErrCtx:   errCtx,
-			LogChan:  logChan,
-			Interval: liveScreenshotCleanupInterval,
-			StopMsg:  "Offline clients cleanup goroutine stopping...",
-			Run: func(context.Context) (logMsg []string, err error) {
-				entriesDeleted, entriesSkipped, totalEntries := appstate.ClearOfflineLiveImageBytes()
-				logMsg = append(logMsg, fmt.Sprintf("live screenshot cleanup done (deleted=%d, skipped=%d, total=%d)", entriesDeleted, entriesSkipped, totalEntries))
-				return logMsg, nil
-			},
-			OnErr: func(err error) error {
-				log.Errorf("Error during offline clients cleanup: %v", err)
-				return err
-			},
-		})
-	})
-
-	// Start log buffer flush goroutine
-	errGroup.Go(func() error {
-		return runBackgroundProcess(backgroundProcessConfig{
-			ErrCtx:   errCtx,
-			LogChan:  logChan,
-			Interval: flushLogBufferInterval,
-			StopMsg:  "Log buffer flush goroutine stopping...",
-			Run: func(context.Context) (logMsg []string, err error) {
-				if err := logger.FlushLogBuffers(); err != nil {
-					logMsg = append(logMsg, fmt.Sprintf("error flushing log buffers: %v", err))
-				}
-				return logMsg, err
-			},
-			OnErr: func(err error) error {
-				log.Errorf("Error during log buffer flush: %v", err)
-				return err
-			},
-		})
-	})
-
-	log.Infof("Background processes started")
-	if err := errGroup.Wait(); err != nil {
-		log.Errorf("Background processes exited with error: %v", err)
-	} else {
-		log.Infof("Background processes exited without error")
-	}
-}
-
-func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []string, err error) {
+func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []backgroundLogMessage, err error) {
 	backgroundCtx, cancel := context.WithTimeout(parentCtx, 45*time.Second)
 	defer cancel()
 
-	realtimeData, err := appstate.GetAllClientRealtimeData()
+	realtimeDataCopy, err := appstate.GetAllClientRealtimeData()
 	if err != nil {
-		logMsg = append(logMsg, fmt.Sprintf("Error retrieving client realtime data: %v", err))
-		return logMsg, nil
-	}
-
-	if len(realtimeData) == 0 {
-		logMsg = append(logMsg, "No realtime client data found, last_heard update skipped")
+		logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("cannot retrieve realtime data: %v", err)})
 		return logMsg, nil
 	}
 
 	var attempted, succeeded, failed int
-	for tag, data := range realtimeData {
-		if data.Tagnumber == 0 || data.LastHeard == nil || data.LastHeard.IsZero() {
+	for tag, data := range realtimeDataCopy {
+		if data.Tagnumber == 0 {
 			failed++
-			logMsg = append(logMsg, fmt.Sprintf("Skipping tag %d: missing tag or nil last_heard", tag))
+			logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelWarn, Message: "skipping realtime update: invalid tag value"})
+			continue
+		}
+
+		if data.LastHeard == nil || data.LastHeard.IsZero() {
+			logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelWarn, Message: fmt.Sprintf("skipping realtime update for tag '%d': invalid last_heard value", tag)})
 			continue
 		}
 
 		if data.LastHeardUpdatedInDB {
-			// logMsg = append(logMsg, fmt.Sprintf("Skipping tag %d: last_heard already updated in DB", tag))
-			continue
+			continue // Skip if last_heard has already been updated in the database
 		}
 
 		attempted++
-		updateCtx, updateCancel := context.WithTimeout(backgroundCtx, 3*time.Second)
+		updateCtx, updateCancel := context.WithTimeout(backgroundCtx, 5*time.Second) // 5 seconds for each update
 		if err := database.UpdateClientLastHeard(updateCtx, tag, data.LastHeard); err != nil {
 			failed++
-			logMsg = append(logMsg, fmt.Sprintf("Failed to write last heard for tag '%d': %s", tag, err.Error()))
+			logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("cannot update last_heard value for tag '%d': %v", tag, err)})
 			updateCancel()
 			continue
 		}
@@ -281,7 +278,7 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []st
 		if d > 0 {
 			select {
 			case <-backgroundCtx.Done():
-				logMsg = append(logMsg, "Stopping last-heard write loop early due to context cancellation")
+				logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelWarn, Message: "stopping last_heard updates early due to parent context cancellation"})
 				return logMsg, nil
 			case <-time.After(d):
 				// Continue to next write interval.
@@ -289,9 +286,9 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []st
 		}
 	}
 
-	logMsg = append(logMsg, fmt.Sprintf("Finished writing persistent last-heard values (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeData), attempted, succeeded, failed))
+	logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelInfo, Message: fmt.Sprintf("finished writing persistent last-heard values to DB (total_clients=%d attempted=%d succeeded=%d failed=%d)", len(realtimeDataCopy), attempted, succeeded, failed)})
 	if attempted == 0 {
-		logMsg = append(logMsg, "No DB writes were attempted for last_heard because all realtime entries had missing/zero last_heard data")
+		logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelWarn, Message: "no realtime data was updated: either no clients are online, or all entries had missing/zero last_heard data"})
 	}
 
 	return logMsg, nil

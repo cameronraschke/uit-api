@@ -20,7 +20,7 @@ func NewSlogger(l *slog.Logger) *Slogger {
 }
 
 func (l *Slogger) Debug(str string) {
-	l.Logf(context.Background(), slog.LevelDebug, "%s", str)
+	l.Log(context.Background(), slog.LevelDebug, str)
 }
 
 func (l *Slogger) Debugf(format string, args ...any) {
@@ -28,7 +28,7 @@ func (l *Slogger) Debugf(format string, args ...any) {
 }
 
 func (l *Slogger) Info(str string) {
-	l.Logf(context.Background(), slog.LevelInfo, "%s", str)
+	l.Log(context.Background(), slog.LevelInfo, str)
 }
 
 func (l *Slogger) Infof(format string, args ...any) {
@@ -36,7 +36,7 @@ func (l *Slogger) Infof(format string, args ...any) {
 }
 
 func (l *Slogger) Warn(str string) {
-	l.Logf(context.Background(), slog.LevelWarn, "%s", str)
+	l.Log(context.Background(), slog.LevelWarn, str)
 }
 
 func (l *Slogger) Warnf(format string, args ...any) {
@@ -44,7 +44,7 @@ func (l *Slogger) Warnf(format string, args ...any) {
 }
 
 func (l *Slogger) Error(str string) {
-	l.Logf(context.Background(), slog.LevelError, "%s", str)
+	l.Log(context.Background(), slog.LevelError, str)
 }
 
 func (l *Slogger) Errorf(format string, args ...any) {
@@ -78,9 +78,6 @@ var (
 )
 
 func InitLogger() error {
-	// Set logger to nil initially
-	appLoggerInstance.Store(nil)
-
 	removeTime := func(groups []string, a slog.Attr) slog.Attr {
 		if a.Key == slog.TimeKey && len(groups) == 0 {
 			return slog.Attr{}
