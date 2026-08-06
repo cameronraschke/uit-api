@@ -77,18 +77,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Failed to initialize application state: "+err.Error())
 			os.Exit(1)
 		}
-		dbPool, pgxPool, err := database.InitDatabasePools()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to initialize database pools: "+err.Error())
-			os.Exit(1)
-		}
-		defer dbPool.Close()
-		defer pgxPool.Close()
-		// Load all client realtime data from DB into app state
-		if err := replaceAllRealtimeDataFromDB(rootCtx); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to load client realtime data from DB: "+err.Error())
-			os.Exit(1)
-		}
 		if err := auth.InitRateLimiters(); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to initialize rate limiters: "+err.Error())
 			os.Exit(1)
@@ -97,7 +85,27 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Failed to initialize authentication sessions: "+err.Error())
 			os.Exit(1)
 		}
+		// We can't defer closing db pools because of sync.Once, done later in main()
+		dbPool, pgxPool, err := database.InitDatabasePools()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize database pools: "+err.Error())
+			dbPool.Close()
+			pgxPool.Close()
+			os.Exit(1)
+		}
+		// Load all client realtime data from DB into app state
+		if err := replaceAllRealtimeDataFromDB(rootCtx); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to load client realtime data from DB: "+err.Error())
+			dbPool.Close()
+			pgxPool.Close()
+			os.Exit(1)
+		}
 	})
+	// Make sure db pools close on exit
+	dbPool, _ := database.GetDatabasePool()
+	defer dbPool.Close()
+	pgxPool, _ := database.GetPGXPool()
+	defer pgxPool.Close()
 
 	log := logger.GetLogger().With(slog.String("func", "main"))
 	logger.FlushLogBuffers()
