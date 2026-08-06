@@ -72,7 +72,7 @@ func LimitRequestSizeMiddleware(next http.Handler) http.Handler {
 			log = log.With(slog.Int64("content_length", req.ContentLength))
 		}
 		if strings.TrimSpace(req.Header.Get("Content-Length")) == "" && (req.Method == http.MethodPost || req.Method == http.MethodPut || req.Method == http.MethodPatch) {
-			log.Info("Content-Length is missing in POST/PUT/PATCH request")
+			log.Infof("header Content-Length is missing in POST/PUT/PATCH request")
 			WriteJsonError(w, http.StatusLengthRequired)
 			return
 		}
@@ -130,7 +130,7 @@ func CheckIPBlockedMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if isBlocked, blockedUntil := auth.IsIPBlocked(reqAddr); isBlocked && !blockedUntil.IsZero() {
-			// log.Info(fmt.Sprintf("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil))
+			// log.Infof("Request received from blocked IP %v, blocked until %v", reqAddr, blockedUntil)
 			WriteJsonError(w, http.StatusForbidden)
 			return
 		}
@@ -286,7 +286,7 @@ func RateLimitMiddleware(limiterType string) func(http.Handler) http.Handler {
 			// IsClientRateLimited creates/updates a per-IP limiter entry and refreshes LastSeen.
 			limited, retryAt := lt.IsClientRateLimited(reqIP)
 			if limited {
-				log.Debug("Client is rate limited", slog.Time("retry_at", retryAt))
+				log.Debugf("client IP %s is rate limited, retry at: %v", reqIP.String(), retryAt)
 				WriteJsonError(w, http.StatusTooManyRequests)
 				return
 			}
@@ -343,20 +343,20 @@ func HTTPMethodMiddleware(next http.Handler) http.Handler {
 			http.MethodDelete:  true,
 		}
 		if !validMethods[req.Method] {
-			log.Warn("Invalid request method (HTTPMethodMiddleware): " + req.Method)
+			log.Infof("invalid request method: %s", req.Method)
 			WriteJsonError(w, http.StatusMethodNotAllowed)
 			return
 		}
 
 		endpointConfig, err := GetWebEndpointConfigFromContext(req.Context())
 		if err != nil {
-			log.Warn("Error getting endpoint config (HTTPMethodMiddleware): " + err.Error())
+			log.Warnf("cannot get endpoint config for path '%s': %v", req.URL.Path, err)
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
 
 		if !slices.Contains(endpointConfig.AllowedMethods, req.Method) {
-			log.Info("Method is not allowed for endpoint (HTTPMethodMiddleware): " + req.Method)
+			log.Infof("method %s is not allowed for endpoint %s", req.Method, req.URL.Path)
 			WriteJsonError(w, http.StatusMethodNotAllowed)
 			return
 		}
@@ -438,7 +438,7 @@ func CheckForRedirectsMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, req)
 			return
 		}
-		log.Info("Redirecting request to: " + redirectURL)
+		log.Infof("redirecting request to: %s", redirectURL)
 		http.Redirect(w, req, redirectURL, http.StatusFound)
 	})
 }
@@ -900,7 +900,7 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 			errors.Is(bearerErr, http.ErrNoCookie) {
 			/* errors.Is(csrfErr, http.ErrNoCookie) */
 			// IP authentication for LAN clients (laptops)
-			// log.Info("Request is missing required cookies, redirecting")
+			// log.Infof("Request is missing required cookies, redirecting")
 			http.Redirect(w, req, redirectURL, http.StatusSeeOther)
 			return
 		}

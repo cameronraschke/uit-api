@@ -165,13 +165,13 @@ func FileServerHandler(w http.ResponseWriter, req *http.Request) {
 	// w.Header().Set("Cache-Control", "private, max-age=300")
 
 	if ctx.Err() != nil {
-		log.Warn("context error while serving file '" + resolvedPath + "': " + ctx.Err().Error())
+		log.Warnf("context error while serving file '%s': %v", resolvedPath, ctx.Err())
 		return
 	}
 
 	// Serve the file
 	http.ServeContent(w, req, metadata.Name(), metadata.ModTime(), requestedFile)
-	log.Info("served file '" + resolvedPath + "' (" + fmt.Sprintf("%.2f", float64(metadata.Size())/1024) + " KiB)")
+	log.Infof("served file '%s' (%.2f KiB)", resolvedPath, float64(metadata.Size())/1024)
 }
 
 func WebServerHandler(w http.ResponseWriter, req *http.Request) {

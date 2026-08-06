@@ -19,7 +19,7 @@ func EchoServer(ws *websocket.Conn) {
 func StartWebSocket(ctx context.Context) error {
 	log := logger.GetLogger().With(slog.String("func", "StartWebSocket"))
 	http.Handle("/ws", websocket.Handler(EchoServer))
-	log.Info("Starting WebSocket server...")
+	log.Infof("starting WebSocket server on *:1411...")
 	err := http.ListenAndServe(":1411", nil)
 	if err != nil {
 		return err

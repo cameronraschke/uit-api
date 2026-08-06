@@ -89,14 +89,14 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 	// Authenticate with bcrypt
 	authenticated, err := CheckAuthCredentials(ctx, clientFormAuthData.Username, clientFormAuthData.Password, clientFormAuthData.TwoFactorCode)
 	if err != nil || !authenticated {
-		log.Info("Authentication failed: " + err.Error())
+		log.Infof("authentication failed: %v", err)
 		WriteJsonError(w, http.StatusUnauthorized)
 		return
 	}
 
 	authSession, err := auth.CreateAuthSession(reqIP)
 	if err != nil {
-		log.Error("Cannot create auth session: " + err.Error())
+		log.Errorf("Cannot create auth session for %s: %v", reqIP.String(), err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -875,14 +875,14 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 
 	// File upload part of form:
 	if req.MultipartForm == nil || req.MultipartForm.File == nil {
-		log.Info("File upload part of image upload is nil")
+		log.Infof("missing file upload part")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	files := req.MultipartForm.File["files"]
 	if len(files) == 0 {
 		if req.MultipartForm.File["files"] == nil {
-			log.Info("No client images provided in request, exiting early")
+			log.Infof("no client images provided in request")
 			WriteJsonError(w, http.StatusBadRequest)
 			return
 		} else {
@@ -1321,7 +1321,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		result.Category = fileCategory
 		result.Status = "uploaded"
 		results = append(results, result)
-		log.Info(fmt.Sprintf("Uploaded file '%s', Size: %.2f MB, MIME Type: %s", fileName, float64(manifest.FileSize)/1024/1024, mimeType))
+		log.Infof("uploaded file '%s', Size: %.2f MB, MIME Type: %s", fileName, float64(manifest.FileSize)/1024/1024, mimeType)
 	}
 	fileUploadCount := totalImageFileCount + totalVideoFileCount
 	totalActualFileBytes := totalImageUploadSize + totalVideoUploadSize
@@ -1347,7 +1347,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if fileUploadCount > 0 && totalActualFileBytes > 0 {
-		log.Info(fmt.Sprintf("Total uploaded files: %d, Total size of uploaded files: %.2f MB", fileUploadCount, float64(totalActualFileBytes)/1024/1024))
+		log.Infof("Total uploaded files: %d, Total size of uploaded files: %.2f MiB", fileUploadCount, float64(totalActualFileBytes)/1024/1024)
 	}
 
 	WriteJson(w, statusCode, summary)

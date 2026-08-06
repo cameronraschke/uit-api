@@ -232,11 +232,11 @@ func startBackgroundProcesses(ctx context.Context, errChan chan error) {
 		})
 	})
 
-	log.Info("Background processes started")
+	log.Infof("Background processes started")
 	if err := errGroup.Wait(); err != nil {
 		log.Errorf("Background processes exited with error: %v", err)
 	} else {
-		log.Info("Background processes exited without error")
+		log.Infof("Background processes exited without error")
 	}
 }
 

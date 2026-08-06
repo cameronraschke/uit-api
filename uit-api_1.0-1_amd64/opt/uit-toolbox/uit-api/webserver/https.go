@@ -174,7 +174,7 @@ func StartWebServer(ctx context.Context) error {
 	httpsRouter.Handle("GET /static/client/configs/uit-client", httpsFullAPIChain.ThenFunc(endpoints.GetClientConfig))
 	httpsRouter.Handle("GET /client/pkg/uit-client", httpsFullAPIChain.ThenFunc(endpoints.WebServerHandler))
 
-	log.Info("Starting HTTPS web server...")
+	log.Infof("Starting HTTPS web server...")
 
 	ac, err := config.GetAppConfig()
 	if err != nil {

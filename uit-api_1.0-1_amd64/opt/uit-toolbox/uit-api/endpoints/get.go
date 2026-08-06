@@ -143,7 +143,7 @@ func GetNotes(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetNotes"))
 	noteType := GetStrQuery(req.URL.Query(), "note_type")
 	if strings.TrimSpace(noteType) == "" {
-		log.Info("No note_type provided, defaulting to 'general'")
+		log.Infof("No note_type provided, defaulting to 'general'")
 		defaultNoteType := "general"
 		noteType = defaultNoteType
 	}
@@ -463,17 +463,17 @@ func GetImage(w http.ResponseWriter, req *http.Request) {
 	imageManifest, err := database.GetClientImageManifestByFileUUID(ctx, imageUUID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Info("Image not found from UUID lookup: " + imageUUID + " " + err.Error())
+			log.Infof("image not found from UUID lookup: '%s': %v", imageUUID, err.Error())
 			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
-		log.Info("Client image query error: " + imageUUID + " " + err.Error())
+		log.Infof("query error for image '%s': %v", imageUUID, err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if imageManifest == nil {
-		log.Info("No image manifest data found for UUID: " + imageUUID)
+		log.Infof("no image manifest data found for '%s'", imageUUID)
 		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
@@ -1025,7 +1025,6 @@ func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
 	var readSeeker io.ReadSeeker = reader
 	w.Header().Set("Content-Type", "image/png")
 	http.ServeContent(w, req, strconv.Itoa(int(tag))+".png", time.Now().UTC(), readSeeker)
-	// log.Info("Served live image '" + strconv.Itoa(int(*tag)) + "' (" + fmt.Sprintf("%.2f", float64(len(imageBytes))/1024/1024) + " MB)")
 }
 
 func FetchAllBuildingsAndRooms(w http.ResponseWriter, req *http.Request) {

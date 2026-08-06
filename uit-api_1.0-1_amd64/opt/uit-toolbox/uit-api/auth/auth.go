@@ -174,7 +174,7 @@ func DeleteAuthSessions(sessionIDs []string) []error {
 	mu.Unlock()
 
 	for _, msg := range stringsToLog {
-		log.Info(msg)
+		log.Infof("%s", msg)
 	}
 	return errSlice
 }
@@ -198,12 +198,12 @@ func ClearExpiredAuthSessions() {
 	mu.RUnlock()
 
 	for _, msg := range stringsToLog {
-		log.Info(msg)
+		log.Infof("%s", msg)
 	}
 
 	if errSlice := DeleteAuthSessions(expiredAuthSessions); len(errSlice) > 0 {
 		for _, err := range errSlice {
-			log.Warn(err.Error())
+			log.Warnf("%v", err)
 		}
 	}
 }

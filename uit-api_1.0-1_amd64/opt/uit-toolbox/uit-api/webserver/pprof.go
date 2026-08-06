@@ -10,7 +10,7 @@ import (
 
 func StartPprofServer(ctx context.Context) error {
 	log := logger.GetLogger()
-	log.Info("Starting pprof server on localhost:6060...")
+	log.Infof("starting pprof server on localhost:6060...")
 
 	pprofServer := &http.Server{Addr: "localhost:6060", Handler: nil}
 

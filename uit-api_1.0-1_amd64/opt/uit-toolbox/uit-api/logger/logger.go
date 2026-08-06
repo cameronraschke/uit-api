@@ -19,16 +19,32 @@ func NewSlogger(l *slog.Logger) *Slogger {
 	return &Slogger{Logger: l}
 }
 
+func (l *Slogger) Debug(str string) {
+	l.Logf(context.Background(), slog.LevelDebug, "%s", str)
+}
+
 func (l *Slogger) Debugf(format string, args ...any) {
 	l.Log(context.Background(), slog.LevelDebug, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) Info(str string) {
+	l.Logf(context.Background(), slog.LevelInfo, "%s", str)
 }
 
 func (l *Slogger) Infof(format string, args ...any) {
 	l.Log(context.Background(), slog.LevelInfo, fmt.Sprintf(format, args...))
 }
 
+func (l *Slogger) Warn(str string) {
+	l.Logf(context.Background(), slog.LevelWarn, "%s", str)
+}
+
 func (l *Slogger) Warnf(format string, args ...any) {
 	l.Log(context.Background(), slog.LevelWarn, fmt.Sprintf(format, args...))
+}
+
+func (l *Slogger) Error(str string) {
+	l.Logf(context.Background(), slog.LevelError, "%s", str)
 }
 
 func (l *Slogger) Errorf(format string, args ...any) {
