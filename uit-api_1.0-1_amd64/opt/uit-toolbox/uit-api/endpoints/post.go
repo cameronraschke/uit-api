@@ -492,17 +492,17 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientLastHeard"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Warnf("Cannot read request body: %v", err)
+		log.Warnf("cannot read request body: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if len(requestBody) == 0 {
-		log.Warnf("Empty request body")
+		log.Warnf("empty request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if !types.IsPrintableUnicode(requestBody) {
-		log.Warnf("Invalid UTF-8 in request body")
+		log.Warnf("invalid UTF-8 in request body")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -511,7 +511,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 		LastHeard time.Time `json:"last_heard"`
 	}
 	if err := json.Unmarshal(requestBody, &lastHeardData); err != nil {
-		log.Warnf("Cannot unmarshal JSON: %v", err)
+		log.Warnf("cannot unmarshal JSON: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -546,7 +546,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	if clientUUID == uuid.Nil || clientUUID.String() == "" {
 		pgxPool, err := database.GetPGXPool()
 		if err != nil {
-			log.Error("No database connection available for updating client last heard")
+			log.Errorf("no database connection available to update last heard value for tag '%d': %v", lastHeardData.Tagnumber, err)
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
@@ -556,7 +556,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 			WriteJsonError(w, http.StatusNotFound)
 			return
 		}
-		log.Infof("updating client UUID '%s' for tag '%d' from database", clientUUID.String(), lastHeardData.Tagnumber)
+		log.Infof("tag '%d' has been associated with UUID %s", lastHeardData.Tagnumber, clientUUID.String())
 		if err := appstate.SetRealtimeClientUUID(lastHeardData.Tagnumber, clientUUID); err != nil {
 			log.Errorf("%v '%s': %v", types.ErrFailedToUpdateRealtimeData, "clientUUID", err)
 			WriteJsonError(w, http.StatusInternalServerError)
@@ -1654,7 +1654,7 @@ func UploadLiveImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if err := appstate.UpdateLiveImageBytes(tag, body); err != nil {
-		log.Warn("Error updating live image for " + strconv.Itoa(int(tag)) + ": " + err.Error())
+		log.Warnf("error updating live image for %d: %v", tag, err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}

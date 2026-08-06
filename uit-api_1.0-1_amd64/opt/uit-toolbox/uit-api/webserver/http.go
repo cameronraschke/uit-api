@@ -2,6 +2,7 @@ package webserver
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -10,7 +11,7 @@ import (
 )
 
 func StartFileServer(ctx context.Context, serverHost string) error {
-	log := logger.GetLogger()
+	log := logger.GetLogger().With(slog.String("func", "StartFileServer"))
 	httpBaseChain := endpoints.NewChain(
 		endpoints.StoreLoggerMiddleware,
 		endpoints.PanicRecoveryMiddleware,
@@ -52,12 +53,12 @@ func StartFileServer(ctx context.Context, serverHost string) error {
 		},
 	}
 
-	return runServerLifecycle(
+	return startWebServer(
 		ctx,
 		log,
 		"HTTP file server",
-		1*time.Minute,
 		httpServer.ListenAndServe,
 		httpServer.Shutdown,
+		1*time.Minute,
 	)
 }

@@ -2,6 +2,7 @@ package webserver
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"time"
@@ -9,17 +10,15 @@ import (
 )
 
 func StartPprofServer(ctx context.Context) error {
-	log := logger.GetLogger()
-	log.Infof("starting pprof server on localhost:6060...")
-
+	log := logger.GetLogger().With(slog.String("func", "StartPprofServer"))
 	pprofServer := &http.Server{Addr: "localhost:6060", Handler: nil}
 
-	return runServerLifecycle(
+	return startWebServer(
 		ctx,
 		log,
 		"pprof server",
-		5*time.Second,
 		pprofServer.ListenAndServe,
 		pprofServer.Shutdown,
+		5*time.Second,
 	)
 }

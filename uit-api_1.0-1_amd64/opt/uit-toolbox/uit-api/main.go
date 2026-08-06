@@ -59,42 +59,45 @@ func main() {
 	}()
 
 	// Initialize application
-	if err := logger.InitLogger(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize logger: "+err.Error())
-		os.Exit(1)
-	}
-	if err := config.InitAppConfig(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize application configuration: "+err.Error())
-		os.Exit(1)
-	}
-	if err := endpoints.InitEndpointConfig(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize endpoint configuration: "+err.Error())
-		os.Exit(1)
-	}
-	if err := appstate.InitAppState(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize application state: "+err.Error())
-		os.Exit(1)
-	}
-	dbPool, pgxPool, err := database.InitDatabasePools()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize database pools: "+err.Error())
-		os.Exit(1)
-	}
-	defer dbPool.Close()
-	defer pgxPool.Close()
-	// Load all client realtime data from DB into app state
-	if err := replaceAllRealtimeDataFromDB(rootCtx); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to load client realtime data from DB: "+err.Error())
-		os.Exit(1)
-	}
-	if err := auth.InitRateLimiters(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize rate limiters: "+err.Error())
-		os.Exit(1)
-	}
-	if err := auth.InitAuthSessions(); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize authentication sessions: "+err.Error())
-		os.Exit(1)
-	}
+	var initApp sync.Once
+	initApp.Do(func() {
+		if err := logger.InitLogger(); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize logger: "+err.Error())
+			os.Exit(1)
+		}
+		if err := config.InitAppConfig(); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize application configuration: "+err.Error())
+			os.Exit(1)
+		}
+		if err := endpoints.InitEndpointConfig(); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize endpoint configuration: "+err.Error())
+			os.Exit(1)
+		}
+		if err := appstate.InitAppState(); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize application state: "+err.Error())
+			os.Exit(1)
+		}
+		dbPool, pgxPool, err := database.InitDatabasePools()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize database pools: "+err.Error())
+			os.Exit(1)
+		}
+		defer dbPool.Close()
+		defer pgxPool.Close()
+		// Load all client realtime data from DB into app state
+		if err := replaceAllRealtimeDataFromDB(rootCtx); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to load client realtime data from DB: "+err.Error())
+			os.Exit(1)
+		}
+		if err := auth.InitRateLimiters(); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize rate limiters: "+err.Error())
+			os.Exit(1)
+		}
+		if err := auth.InitAuthSessions(); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to initialize authentication sessions: "+err.Error())
+			os.Exit(1)
+		}
+	})
 
 	log := logger.GetLogger().With(slog.String("func", "main"))
 	logger.FlushLogBuffers()
@@ -109,6 +112,7 @@ func main() {
 	var wg sync.WaitGroup
 	rootErrChan := make(chan error, 10) // Buffer in case of multiple errors
 
+	log.Infof("starting pprof HTTP server on http://localhost:6060...")
 	wg.Go(func() {
 		if err := webserver.StartPprofServer(rootCtx); err != nil {
 			select {
@@ -119,7 +123,6 @@ func main() {
 		}
 	})
 
-	webServerStart := time.Now()
 	// Start HTTP server
 	log.Infof("starting HTTP server on http://%s:8080...", httpHost)
 	wg.Go(func() {
@@ -143,8 +146,6 @@ func main() {
 			}
 		}
 	})
-	webServerDuration := time.Since(webServerStart)
-	log.Infof("web servers started in: %dms", webServerDuration.Milliseconds())
 
 	// Start background processes
 	wg.Go(func() {
@@ -170,13 +171,19 @@ func main() {
 	case <-rootCtx.Done():
 		log.Infof("shutdown signal received from OS: %v", rootCtx.Err())
 		flushCtx, flushCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
+		log.Infof("writing last_heard values to DB on shutdown...")
+		writeLastHeardToDB(flushCtx, 0) // Write last_heard values to DB on shutdown, no delay
 		flushCancel()
-	case err := <-rootErrChan:
+	case err, ok := <-rootErrChan:
+		if !ok {
+			log.Errorf("root error channel closed unexpectedly")
+			break
+		}
 		log.Errorf("error received from root error channel: %v", err)
 		stopRootCtx() // Cancel context to stop all goroutines
 		flushCtx, flushCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		writeLastHeardToDB(flushCtx, 1*time.Second) // Write last_heard values to DB on shutdown
+		log.Infof("writing last_heard values to DB on shutdown...")
+		writeLastHeardToDB(flushCtx, 0) // Write last_heard values to DB on shutdown, no delay
 		flushCancel()
 	}
 	logger.FlushLogBuffers()

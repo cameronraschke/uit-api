@@ -57,7 +57,8 @@ func UpdateLiveImageBytes(tag int64, imageBytes []byte) error {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
-	if len(imageBytes) <= 0 || len(imageBytes) > types.MaxLiveImageBytes {
+	// This allows for the live image to be cleared/zeroed
+	if len(imageBytes) > types.MaxLiveImageBytes {
 		return fmt.Errorf("size of live image is out of range: %.2fMB", float64(len(imageBytes))/1024/1024)
 	}
 	as, err := GetAppState()

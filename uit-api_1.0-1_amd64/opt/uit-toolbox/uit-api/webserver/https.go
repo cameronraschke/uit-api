@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -15,7 +16,7 @@ import (
 )
 
 func StartWebServer(ctx context.Context) error {
-	log := logger.GetLogger()
+	log := logger.GetLogger().With(slog.String("func", "StartWebServer"))
 
 	// https handlers and middleware chains
 	httpsBaseChain := endpoints.NewChain(
@@ -225,14 +226,14 @@ func StartWebServer(ctx context.Context) error {
 		return fmt.Errorf("error getting TLS cert files for HTTPS web server: %w", err)
 	}
 
-	return runServerLifecycle(
+	return startWebServer(
 		ctx,
 		log,
 		"HTTPS web server",
-		30*time.Second,
 		func() error {
 			return httpsServer.ListenAndServeTLS(webCertFile, webKeyFile)
 		},
 		httpsServer.Shutdown,
+		30*time.Second,
 	)
 }
