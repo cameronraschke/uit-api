@@ -15,7 +15,7 @@ import (
 	"uit-api/types"
 )
 
-func StartWebServer(ctx context.Context) error {
+func StartWebServer(ctx context.Context, debug bool) error {
 	log := logger.GetLogger().With(slog.String("func", "StartWebServer"))
 
 	// https handlers and middleware chains
@@ -200,9 +200,15 @@ func StartWebServer(ctx context.Context) error {
 		PreferServerCipherSuites: true,
 		SessionTicketsDisabled:   false,
 	}
+	var httpsHandler http.Handler
+	if debug {
+		sampleEvery := uint64(1000)
+		httpsHandler = endpoints.MemSampleMiddleware(httpsRouter, sampleEvery, nil)
+	} else {
+		httpsHandler = httpsRouter
+	}
 
-	sampleEvery := uint64(1000)
-	wrappedHandler := endpoints.MemSampleMiddleware(httpsRouter, sampleEvery, nil)
+	wrappedHandler := httpsHandler
 	httpsServer := &http.Server{
 		Addr:              ":31411",
 		Handler:           wrappedHandler,

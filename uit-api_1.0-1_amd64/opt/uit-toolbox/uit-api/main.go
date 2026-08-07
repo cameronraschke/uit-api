@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,8 +23,11 @@ import (
 
 func replaceAllRealtimeDataFromDB(ctx context.Context) error {
 	res, err := database.GetAllLiveOSData(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve all live OS data from DB: %w", err)
+	}
 	for tag, data := range res {
-		if err := appstate.ReplaceClientRealtimeData(tag, &data); err != nil {
+		if err := appstate.ReplaceClientRealtimeData(tag, data); err != nil {
 			return fmt.Errorf("failed to update client realtime data for tag %d: %w", tag, err)
 		}
 	}
@@ -31,6 +35,9 @@ func replaceAllRealtimeDataFromDB(ctx context.Context) error {
 }
 
 func main() {
+	debugMode := flag.Bool("debug", false, "--debug")
+	flag.Parse()
+
 	fmt.Fprintln(os.Stdout, "starting UIT API...")
 
 	// Create root context
@@ -146,7 +153,7 @@ func main() {
 	// Start HTTPS server
 	log.Infof("starting HTTPS server on https://*:31411")
 	wg.Go(func() {
-		if err := webserver.StartWebServer(rootCtx); err != nil {
+		if err := webserver.StartWebServer(rootCtx, *debugMode); err != nil {
 			select {
 			case rootErrChan <- err:
 			default:

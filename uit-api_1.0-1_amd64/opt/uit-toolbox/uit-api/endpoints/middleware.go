@@ -36,19 +36,19 @@ var weakCiphers = map[uint16]bool{
 }
 
 // memSampleCounter increments per request and controls sampling frequency.
-var memSampleCounter uint64
+var memSampleCounter atomic.Uint64
 
 // MemSampleMiddleware logs per-request memory deltas every sampleEvery requests.
 func MemSampleMiddleware(next http.Handler, sampleEvery uint64, log *slog.Logger) http.Handler {
 	if sampleEvery == 0 {
-		sampleEvery = 1000 // default: sample 1% if traffic is steady
+		sampleEvery = 1000 // default if not specified
 	}
 	if log == nil {
 		log = slog.Default()
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddUint64(&memSampleCounter, 1)
+		n := memSampleCounter.Add(1)
 		if n%sampleEvery != 0 {
 			next.ServeHTTP(w, r)
 			return

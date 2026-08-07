@@ -137,21 +137,18 @@ func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
 	defer appState.ClientRealtimeDataMu.Unlock()
 	clientData := appState.ClientRealtimeData[tag]
 	clientData.Tagnumber = tag
-	clientData.LastHeard = lastHeard       // nil check above
+	clientData.LastHeard = lastHeard        // nil check above
 	clientData.LastHeardUpdatedInDB = false // Mark as not updated in DB, this function only gets used in post.go
 	appState.ClientRealtimeData[tag] = clientData
 
 	return nil
 }
 
-func ReplaceClientRealtimeData(tag int64, val *types.JobQueueRealtimeData) error {
+func ReplaceClientRealtimeData(tag int64, newVal types.JobQueueRealtimeData) error {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
-	if val == nil {
-		return fmt.Errorf("JobQueueRealtimeData struct is nil")
-	}
-	if val.LastHeard.IsZero() {
+	if newVal.LastHeard == nil || newVal.LastHeard.IsZero() {
 		// return fmt.Errorf("lastHeard is nil, skipping update for tag %d", tag)
 		return nil // No need to update if lastHeard is zero, just skip
 	}
@@ -161,10 +158,9 @@ func ReplaceClientRealtimeData(tag int64, val *types.JobQueueRealtimeData) error
 		return fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
 	}
 
-	valCopy := *val // Create a copy to avoid modifying the original struct
 	appState.ClientRealtimeDataMu.Lock()
 	defer appState.ClientRealtimeDataMu.Unlock()
-	appState.ClientRealtimeData[tag] = valCopy
+	appState.ClientRealtimeData[tag] = newVal
 
 	return nil
 }
