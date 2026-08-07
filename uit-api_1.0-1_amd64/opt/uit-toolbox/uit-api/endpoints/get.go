@@ -315,7 +315,7 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 			}
 
 			// Get file size
-			metadataFileSize := imageStat.Size()
+			metadataFileSize := int(imageStat.Size())
 			responseManifest.FileSize = &metadataFileSize
 
 			// If an image
@@ -326,7 +326,7 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 					return false
 				}
 
-				imageBytes, err := io.ReadAll(io.LimitReader(file, fileConstraints.ImageConstraints.MaxFileSize+1))
+				imageBytes, err := io.ReadAll(io.LimitReader(file, int64(fileConstraints.ImageConstraints.MaxFileSize)+1))
 				if err != nil {
 					log.Warn("Error reading image file in GetClientImagesManifest: " + filePath + " " + err.Error())
 					return false
@@ -378,7 +378,7 @@ func GetClientImagesManifest(w http.ResponseWriter, req *http.Request) {
 					return false
 				}
 
-				videoBytes, err := io.ReadAll(io.LimitReader(file, fileConstraints.VideoConstraints.MaxFileSize+1))
+				videoBytes, err := io.ReadAll(io.LimitReader(file, int64(fileConstraints.VideoConstraints.MaxFileSize)+1))
 				if err != nil {
 					log.Warn("Error reading video file in GetClientImagesManifest: " + filePath + " " + err.Error())
 					return false
@@ -900,17 +900,11 @@ func FetchClientHardwareData(w http.ResponseWriter, req *http.Request) {
 }
 
 func FetchClientJobQueuePosition(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientJobQueuePosition"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "FetchClientJobQueuePosition"))
 
-	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
-	if err != nil {
-		log.Warn("Invalid tagnumber provided: " + err.Error())
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
+	tag := GetInt64Query(req.URL.Query(), "tagnumber")
 
-	queuePosition, err := database.SelectJobQueuePosition(ctx, *tagnumber)
+	queuePosition, err := database.SelectJobQueuePosition(req.Context(), tag)
 	if err != nil {
 		log.Warn("DB error: " + err.Error())
 		WriteJsonError(w, http.StatusInternalServerError)
@@ -918,27 +912,26 @@ func FetchClientJobQueuePosition(w http.ResponseWriter, req *http.Request) {
 	}
 
 	returnedJson := struct {
-		Position *int64 `json:"job_queue_position"`
+		Position int64 `json:"job_queue_position"`
 	}{
-		Position: &queuePosition,
+		Position: queuePosition, // SelectJobQueuePosition always returns a valid int, errors return queuePositionMaxValue
 	}
 	WriteJson(w, http.StatusOK, returnedJson)
 }
 
-func FetchClientJobName(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchClientJobName"))
+func GETClientJobName(w http.ResponseWriter, req *http.Request) {
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "GETClientJobName"))
 
-	tagnumber, err := types.ConvertAndVerifyTagnumber(req.URL.Query().Get("tagnumber"))
-	if err != nil {
+	tag := GetInt64Query(req.URL.Query(), "tagnumber")
+	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		log.Warn("Invalid tagnumber provided: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	jobName, err := database.GetJobName(ctx, *tagnumber)
+	jobName, err := database.SelectJobName(req.Context(), tag)
 	if err != nil {
-		log.Warn("DB error: " + err.Error())
+		log.Warnf("Error fetching job name for tag %d: %v", tag, err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
@@ -957,22 +950,16 @@ func FetchClientJobName(w http.ResponseWriter, req *http.Request) {
 }
 
 func FetchFormattedJobName(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx).With(slog.String("func", "FetchFormattedJobName"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "FetchFormattedJobName"))
 
-	jobName := strings.TrimSpace(req.URL.Query().Get("job_name"))
+	jobName := GetStrQuery(req.URL.Query(), "job_name")
 	if jobName == "" {
 		log.Debug("Empty job_name provided")
-		WriteJson(w, http.StatusOK,
-			struct {
-				JobNameFormatted string `json:"job_name_formatted"`
-			}{
-				JobNameFormatted: "",
-			})
+		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	jobNameFormatted, err := database.GetFormattedJobName(ctx, jobName)
+	jobNameFormatted, err := database.GetFormattedJobName(req.Context(), jobName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Warn("Job name not found")
@@ -1012,12 +999,20 @@ func DownloadLiveImage(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
+
+	ac, err := config.GetAppConfig()
+	if err != nil {
+		log.Warn("Error getting app config: " + err.Error())
+		WriteJsonError(w, http.StatusInternalServerError)
+		return
+	}
+
 	if len(imageBytes) == 0 {
 		// log.Warn("Requested live image is empty")
 		WriteJsonError(w, http.StatusNotFound)
 		return
 	}
-	if len(imageBytes) == 0 {
+	if len(imageBytes) > ac.FileConstraints.Load().ImageConstraints.MaxFileSize {
 		log.Warn("Requested live image is too large")
 		WriteJsonError(w, http.StatusBadRequest)
 		return

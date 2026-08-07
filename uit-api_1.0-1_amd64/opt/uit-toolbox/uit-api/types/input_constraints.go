@@ -3,19 +3,19 @@ package types
 type FileUploadConstraints struct {
 	ImageConstraints       *ImageUploadConstraints
 	VideoConstraints       *VideoUploadConstraints
-	MaxUploadFileSizeLimit int64
+	MaxUploadFileSizeLimit int
 }
 
 type ImageUploadConstraints struct {
-	MinFileSize                         int64
-	MaxFileSize                         int64
+	MinFileSize                         int
+	MaxFileSize                         int
 	MaxFileCount                        int
 	AcceptedImageExtensionsAndMimeTypes map[string]string
 }
 
 type VideoUploadConstraints struct {
-	MinFileSize                         int64
-	MaxFileSize                         int64
+	MinFileSize                         int
+	MaxFileSize                         int
 	MaxFileCount                        int
 	AcceptedVideoExtensionsAndMimeTypes map[string]string
 }
@@ -26,7 +26,7 @@ type HTMLFormConstraints struct {
 }
 
 type InventoryUpdateFormConstraints struct {
-	MaxJSONBytes                 int64
+	MaxJSONBytes                 int
 	AcquiredDateIsMandatory      bool
 	RetiredDateIsMandatory       bool
 	IsFunctionalIsMandatory      bool
@@ -38,5 +38,5 @@ type InventoryUpdateFormConstraints struct {
 }
 
 type GeneralNoteConstraints struct {
-	MaxFormBytes        int64
+	MaxFormBytes int
 }

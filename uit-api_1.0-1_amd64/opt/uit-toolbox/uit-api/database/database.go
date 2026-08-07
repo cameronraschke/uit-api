@@ -148,6 +148,13 @@ func toNullUUID(u uuid.UUID) sql.NullString {
 	return sql.NullString{String: u.String(), Valid: true}
 }
 
+func toNullInt(i int) sql.NullInt64 {
+	if i == 0 {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(i), Valid: true}
+}
+
 func toNullInt64(i int64) sql.NullInt64 {
 	if i == 0 {
 		return sql.NullInt64{}

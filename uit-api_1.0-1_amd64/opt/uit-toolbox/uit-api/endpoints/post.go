@@ -254,8 +254,7 @@ func SetClientCPUUsage(w http.ResponseWriter, req *http.Request) {
 }
 
 func SetClientCPUMHz(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx).With(slog.String("func", "SetClientCPUMHz"))
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "SetClientCPUMHz"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warnf("Cannot read request body: %v", err)
@@ -282,7 +281,7 @@ func SetClientCPUMHz(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := database.UpsertClientCPUMHz(ctx, cpuData); err != nil {
+	if err := database.UpsertClientCPUMHz(req.Context(), cpuData); err != nil {
 		log.Errorf("Failed to update client CPU MHz: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -550,7 +549,15 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		clientUUID, err = database.GetClientUUIDByTag(ctx, pgxPool, lastHeardData.Tagnumber)
+
+		tx, err := pgxPool.Begin(ctx)
+		if err != nil {
+			log.Errorf("failed to begin database transaction for tag '%d': %v", lastHeardData.Tagnumber, err)
+			WriteJsonError(w, http.StatusInternalServerError)
+			return
+		}
+
+		clientUUID, err = database.GetClientUUIDByTag(ctx, tx, lastHeardData.Tagnumber)
 		if err != nil {
 			log.Errorf("%v '%d': %v", types.ErrClientUUIDNotFoundInDB, lastHeardData.Tagnumber, err)
 			WriteJsonError(w, http.StatusNotFound)
@@ -574,9 +581,8 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 	WriteJson(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
-func UpdateClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	log := GetLoggerFromContext(ctx).With(slog.String("func", "UpdateClientBatteryChargePcnt"))
+func POSTClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
+	log := GetLoggerFromContext(req.Context()).With(slog.String("func", "POSTClientBatteryChargePcnt"))
 	requestBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		log.Warnf("Cannot read request body: %v", err)
@@ -588,11 +594,7 @@ func UpdateClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if !types.IsPrintableUnicode(requestBody) {
-		log.Warnf("Invalid UTF-8 in request body")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
+
 	batteryData := new(types.BatteryDataRequest)
 	if err := json.Unmarshal(requestBody, batteryData); err != nil {
 		log.Warnf("Cannot unmarshal JSON: %v", err)
@@ -600,28 +602,18 @@ func UpdateClientBatteryChargePcnt(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := types.IsTagnumberInt64Valid(batteryData.Tagnumber); err != nil {
-		log.Warnf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err)
+	if err := batteryData.IsValid(); err != nil {
+		errMsg := new(strings.Builder)
+		for _, e := range err {
+			errMsg.WriteString(e.Error())
+			errMsg.WriteString("; ")
+		}
+		log.Warnf("Invalid battery data request: %v", errMsg.String())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if batteryData.BatteryChargePcnt == nil {
-		log.Warnf("%v for '%s': %v", types.InvalidRequestFieldError, "batteryChargePcnt", "value is nil or zero")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if *batteryData.BatteryChargePcnt < 0 || *batteryData.BatteryChargePcnt > 100 {
-		log.Warnf("Battery percentage out of valid range (0-100)")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	updateRepo, err := database.NewUpdateRepo()
-	if err != nil {
-		log.Errorf("%v while updating '%s': %v", types.DatabaseConnError, "clientBatteryChargePcnt", err)
-		WriteJsonError(w, http.StatusInternalServerError)
-		return
-	}
-	if err := updateRepo.UpdateClientBatteryChargePcnt(ctx, batteryData.Tagnumber, batteryData.BatteryChargePcnt); err != nil {
+
+	if err := database.UpdateClientBatteryChargePcnt(req.Context(), batteryData.Tagnumber, batteryData.BatteryChargePcnt); err != nil {
 		log.Errorf("%v '%s': %v", types.FailedToUpdateDatabaseValueError, "clientBatteryChargePcnt", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -699,14 +691,14 @@ func InsertInventoryUpdate(w http.ResponseWriter, req *http.Request) {
 	}
 	defer jsonFile.Close()
 
-	jsonReader := &io.LimitedReader{R: jsonFile, N: htmlFormConstraints.InventoryForm.MaxJSONBytes + 1}
+	jsonReader := &io.LimitedReader{R: jsonFile, N: int64(htmlFormConstraints.InventoryForm.MaxJSONBytes + 1)}
 	jsonBytes, err := io.ReadAll(jsonReader)
 	if err != nil {
 		log.Warn("Error reading JSON data from form: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if int64(len(jsonBytes)) > htmlFormConstraints.InventoryForm.MaxJSONBytes {
+	if int64(len(jsonBytes)) > int64(htmlFormConstraints.InventoryForm.MaxJSONBytes) {
 		log.Warn("JSON data in form exceeds maximum allowed size after reading")
 		WriteJsonError(w, http.StatusRequestEntityTooLarge)
 		return
@@ -827,10 +819,10 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}
-	req.Body = http.MaxBytesReader(w, req.Body, *maxAllowedUploadBytes)
+	req.Body = http.MaxBytesReader(w, req.Body, int64(*maxAllowedUploadBytes))
 	defer req.Body.Close()
 
-	if err := req.ParseMultipartForm(*maxAllowedUploadBytes); err != nil {
+	if err := req.ParseMultipartForm(int64(*maxAllowedUploadBytes)); err != nil {
 		if errors.Is(err, http.ErrNotMultipart) {
 			log.Warn("Request body is not multipart form data: " + err.Error())
 			WriteJsonError(w, http.StatusBadRequest)
@@ -895,7 +887,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		StoredName   string `json:"stored_name,omitempty"`
 		FileUUID     string `json:"file_uuid,omitempty"`
 		MimeType     string `json:"mime_type,omitempty"`
-		Bytes        int64  `json:"bytes,omitempty"`
+		Bytes        int    `json:"bytes,omitempty"`
 		Category     string `json:"category,omitempty"`
 		Status       string `json:"status"`
 		Reason       string `json:"reason,omitempty"`
@@ -910,7 +902,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		FailedCount        int                `json:"failed_count"`
 		ImageCount         int                `json:"image_count"`
 		VideoCount         int                `json:"video_count"`
-		TotalUploadedBytes int64              `json:"total_uploaded_bytes"`
+		TotalUploadedBytes int                `json:"total_uploaded_bytes"`
 		Results            []uploadFileResult `json:"results"`
 	}
 
@@ -922,9 +914,9 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var totalImageFileCount int
-	var totalImageUploadSize int64
+	var totalImageUploadSize int
 	var totalVideoFileCount int
-	var totalVideoUploadSize int64
+	var totalVideoUploadSize int
 	results := make([]uploadFileResult, 0, len(files))
 	var skippedCount int
 	var failedCount int
@@ -986,7 +978,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		lr := &io.LimitedReader{R: file, N: fileUploadConstraints.ImageConstraints.MaxFileSize + fileUploadConstraints.VideoConstraints.MaxFileSize + 1}
+		lr := &io.LimitedReader{R: file, N: int64(fileUploadConstraints.ImageConstraints.MaxFileSize + fileUploadConstraints.VideoConstraints.MaxFileSize + 1)}
 		fileBytes, err := io.ReadAll(lr)
 		_ = file.Close()
 		if err != nil {
@@ -999,7 +991,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// File size
-		manifest.FileSize = int64(len(fileBytes))
+		manifest.FileSize = len(fileBytes)
 
 		// MIME type detection
 		mimeType := http.DetectContentType(fileBytes)
@@ -1102,7 +1094,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			if manifest.FileSize > fileUploadConstraints.ImageConstraints.MaxFileSize {
-				log.Warn("Uploaded image file '" + fileHeader.Filename + "' too large (" + strconv.FormatInt(manifest.FileSize, 10) + " bytes)")
+				log.Warnf("Uploaded image file '%s' too large (%d bytes)", fileHeader.Filename, manifest.FileSize)
 				result.Status = "failed"
 				result.Reason = "image_file_too_large"
 				results = append(results, result)
@@ -1110,7 +1102,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			if manifest.FileSize < fileUploadConstraints.ImageConstraints.MinFileSize {
-				log.Warn("Uploaded image file too small: " + fileHeader.Filename + " (" + strconv.FormatInt(manifest.FileSize, 10) + " bytes)")
+				log.Warnf("Uploaded image file '%s' too small (%d bytes)", fileHeader.Filename, manifest.FileSize)
 				result.Status = "failed"
 				result.Reason = "image_file_too_small"
 				results = append(results, result)
@@ -1220,7 +1212,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			if manifest.FileSize > fileUploadConstraints.VideoConstraints.MaxFileSize {
-				log.Warn("Uploaded video file too large (" + strconv.FormatInt(manifest.FileSize, 10) + " bytes)")
+				log.Warnf("Uploaded video file too large (%.2f KiB)", float64(manifest.FileSize)/1024)
 				result.Status = "failed"
 				result.Reason = "video_file_too_large"
 				results = append(results, result)
@@ -1228,7 +1220,7 @@ func UploadClientImage(w http.ResponseWriter, req *http.Request) {
 				continue
 			}
 			if manifest.FileSize < fileUploadConstraints.VideoConstraints.MinFileSize {
-				log.Warn("Uploaded video file too small: " + fileHeader.Filename + " (" + strconv.FormatInt(manifest.FileSize, 10) + " bytes)")
+				log.Warnf("Uploaded video file too small ('%s') (%.2f KiB)", fileHeader.Filename, float64(manifest.FileSize)/1024)
 				result.Status = "failed"
 				result.Reason = "video_file_too_small"
 				results = append(results, result)

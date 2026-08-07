@@ -91,6 +91,6 @@ type WebEndpointConfig struct {
 	StatusCode      int      `json:"status_code"`
 	Redirect        *bool    `json:"redirect"`
 	RedirectURL     string   `json:"redirect_url"`
-	MaxUploadSize   *int64   `json:"max_upload_size"`
-	MaxDownloadSize *int64   `json:"max_download_size"`
+	MaxUploadSize   *int   `json:"max_upload_size"`
+	MaxDownloadSize *int   `json:"max_download_size"`
 }

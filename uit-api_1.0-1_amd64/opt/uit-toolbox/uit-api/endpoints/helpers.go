@@ -279,15 +279,10 @@ func checkQueryKey(queries url.Values, key string) error {
 	return nil
 }
 func GetStrQuery(queries url.Values, key string) string {
-	trimmedKey := strings.TrimSpace(key)
-	if err := checkQueryKey(queries, trimmedKey); err != nil {
+	if err := checkQueryKey(queries, key); err != nil {
 		return ""
 	}
-	val := strings.TrimSpace(queries.Get(trimmedKey))
-	if val == "" {
-		return ""
-	}
-	return val
+	return strings.TrimSpace(queries.Get(key))
 }
 func GetUUIDFromQuery(queries url.Values, key string) (*uuid.UUID, error) {
 	strVal := GetStrQuery(queries, key)

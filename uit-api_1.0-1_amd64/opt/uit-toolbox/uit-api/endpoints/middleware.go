@@ -11,10 +11,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"uit-api/auth"
 	"uit-api/config"
@@ -31,6 +33,53 @@ var weakCiphers = map[uint16]bool{
 	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:     true,
 	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256: true,
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:   true,
+}
+
+// memSampleCounter increments per request and controls sampling frequency.
+var memSampleCounter uint64
+
+// MemSampleMiddleware logs per-request memory deltas every sampleEvery requests.
+func MemSampleMiddleware(next http.Handler, sampleEvery uint64, log *slog.Logger) http.Handler {
+	if sampleEvery == 0 {
+		sampleEvery = 1000 // default: sample 1% if traffic is steady
+	}
+	if log == nil {
+		log = slog.Default()
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddUint64(&memSampleCounter, 1)
+		if n%sampleEvery != 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		start := time.Now()
+
+		next.ServeHTTP(w, r)
+
+		runtime.ReadMemStats(&after)
+		duration := time.Since(start)
+
+		var totalAllocDelta uint64
+		if after.TotalAlloc >= before.TotalAlloc {
+			totalAllocDelta = after.TotalAlloc - before.TotalAlloc
+		}
+		var mallocsDelta uint64
+		if after.Mallocs >= before.Mallocs {
+			mallocsDelta = after.Mallocs - before.Mallocs
+		}
+
+		log.Info("mem sample",
+			"path", r.URL.Path,
+			"method", r.Method,
+			"duration_ms", duration.Milliseconds(),
+			"total_alloc_delta_bytes", fmt.Sprintf("%.2fKiB", float64(totalAllocDelta)/1024), // KiB allocated during request
+			"mallocs_delta", mallocsDelta, // number of mallocs
+		)
+	})
 }
 
 func StoreLoggerMiddleware(next http.Handler) http.Handler {
@@ -82,12 +131,12 @@ func LimitRequestSizeMiddleware(next http.Handler) http.Handler {
 			WriteJsonError(w, http.StatusInternalServerError)
 			return
 		}
-		if req.ContentLength > fileUploadConstraints.MaxUploadFileSizeLimit {
+		if req.ContentLength > int64(fileUploadConstraints.MaxUploadFileSizeLimit) {
 			log.Warn("Request content length exceeds limit: " + fmt.Sprintf("%.2fMB", float64(req.ContentLength)/1e6) + "/" + fmt.Sprintf("%.2fMB", float64(fileUploadConstraints.MaxUploadFileSizeLimit)/1e6))
 			WriteJsonError(w, http.StatusRequestEntityTooLarge)
 			return
 		}
-		req.Body = http.MaxBytesReader(w, req.Body, fileUploadConstraints.MaxUploadFileSizeLimit)
+		req.Body = http.MaxBytesReader(w, req.Body, int64(fileUploadConstraints.MaxUploadFileSizeLimit))
 		next.ServeHTTP(w, req)
 	})
 }

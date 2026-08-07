@@ -20,6 +20,7 @@ import (
 	"uit-api/types"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,35 +50,31 @@ func NewSelectRepo() (Select, error) {
 
 var _ Select = (*SelectRepo)(nil)
 
-func GetClientUUIDByTag(ctx context.Context, pgxPool *pgxpool.Pool, tagnumber int64) (clientUUID uuid.UUID, err error) {
-	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
-		return uuid.Nil, fmt.Errorf("tagnumber is nil or invalid: %w", err)
+func GetClientUUIDByTag(ctx context.Context, tx pgx.Tx, tagnumber int64) (uuid.UUID, error) {
+	if tx == nil {
+		return uuid.Nil, fmt.Errorf("%w: transaction is nil", types.DatabaseTransactionError)
 	}
-	if pgxPool == nil {
-		pgxPool, err = GetPGXPool()
-		if err != nil {
-			return uuid.Nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
-		}
+
+	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
+		return uuid.Nil, fmt.Errorf("%w for '%s': %v", types.InvalidFieldError, "tagnumber", err)
 	}
 
 	const sqlCode = `
 		SELECT uuid
 		FROM ids
 		WHERE tagnumber = $1
+		ORDER BY time DESC
+		LIMIT 1
 	;`
 
-	row := pgxPool.QueryRow(ctx, sqlCode,
-		toNullInt64(tagnumber),
-	)
-	if err := row.Scan(
-		&clientUUID,
-	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	var clientUUID uuid.UUID
+	err := tx.QueryRow(ctx, sqlCode, toNullInt64(tagnumber)).Scan(&clientUUID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, fmt.Errorf("%w: no client found for tagnumber '%d'", types.DatabaseQueryError, tagnumber)
 		}
 		return uuid.Nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
-
 	return clientUUID, nil
 }
 
@@ -1924,7 +1921,13 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
+	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
+	}
+	defer cleanupPGXTx(tx, &err)
+
+	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
 	if err != nil {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -1992,9 +1995,14 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 	return queuePosition.Int64, nil
 }
 
-func GetJobName(ctx context.Context, tag int64) (*string, error) {
+func SelectJobName(ctx context.Context, tag int64) (*string, error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, fmt.Errorf("%w: %w", types.InvalidFieldError, err)
+	}
+
+	pgxPool, err := GetPGXPool()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
 	const sqlCode = `
@@ -2006,11 +2014,6 @@ func GetJobName(ctx context.Context, tag int64) (*string, error) {
 		tagnumber = $1
 	;`
 
-	pgxPool, err := GetPGXPool()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
-	}
-
 	var jobName sql.NullString
 	row := pgxPool.QueryRow(ctx, sqlCode, tag)
 	if err := row.Scan(
@@ -2020,6 +2023,9 @@ func GetJobName(ctx context.Context, tag int64) (*string, error) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
+	}
+	if !jobName.Valid {
+		return nil, nil
 	}
 	return &jobName.String, nil
 }
@@ -2166,7 +2172,12 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
+	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
+	}
+
+	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}

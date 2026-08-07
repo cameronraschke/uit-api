@@ -25,7 +25,6 @@ type Update interface {
 	UpdateClientAppUptime(ctx context.Context, tag int64, appUptime int64) (err error)
 	UpdateClientSystemUptime(ctx context.Context, tag int64, systemUptime int64) (err error)
 	UpdateJobQueuedAt(ctx context.Context, jobQueue *types.JobQueueTableRowView) (err error)
-	UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent *float64) (err error)
 	BulkUpdateClientLocation(ctx context.Context, transactionUUID *string, tag int64, location *string) (err error)
 }
 
@@ -436,7 +435,7 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
 
-	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, inventoryUpdate.Tagnumber)
+	clientUUID, err := GetClientUUIDByTag(ctx, tx, inventoryUpdate.Tagnumber)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -696,7 +695,7 @@ func UpdateClientImages(ctx context.Context, transactionUUID uuid.UUID, manifest
 		toNullInt64(manifest.Tagnumber),
 		toNullString(manifest.FileName),
 		ptrToNullString(manifest.ThumbnailFileName),
-		toNullInt64(manifest.FileSize),
+		toNullInt(manifest.FileSize),
 		manifest.SHA256Hash,
 		toNullString(manifest.MimeType),
 		ptrToNullTime(manifest.ExifTimestamp),
@@ -1098,37 +1097,24 @@ func UpsertClientCPUUsage(ctx context.Context, cpuData *types.CPUDataUpdateDTO) 
 
 func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (err error) {
 	if cpuData == nil {
-		return fmt.Errorf("CPU data is required")
+		return fmt.Errorf("CPU data is nil")
 	}
 
-	if err := types.IsTagnumberInt64Valid(cpuData.Tagnumber); err != nil {
-		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
-	}
-
-	if cpuData.MHz <= 0 {
-		return fmt.Errorf("%w: %s must be greater than 0", types.InvalidFieldError, "CPU MHz")
-	}
-
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	dbConn, err := GetDatabasePool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	tx, err := dbConn.BeginTx(ctx, nil)
+	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		} else {
-			err = tx.Commit()
-		}
-	}()
+	defer cleanupPGXTx(tx, &err)
+
+	clientUUID, err := GetClientUUIDByTag(ctx, tx, cpuData.Tagnumber)
+	if err != nil {
+		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
+	}
 
 	const sqlCode = `
 		INSERT INTO 
@@ -1138,24 +1124,24 @@ func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (e
 				cpu_mhz
 			) 
 		VALUES (
-			(SELECT uuid FROM ids WHERE tagnumber = $1 ORDER BY time DESC LIMIT 1),
 			$1, 
-			$2
+			$2, 
+			$3
 		)
 		ON CONFLICT (client_uuid) DO UPDATE SET 
 			tagnumber = EXCLUDED.tagnumber,
 			cpu_mhz = EXCLUDED.cpu_mhz
 	;`
-	var sqlResult sql.Result
-	sqlResult, err = tx.ExecContext(ctx, sqlCode,
+	res, err := tx.Exec(ctx, sqlCode,
+		toNullUUID(clientUUID),
 		toNullInt64(cpuData.Tagnumber),
 		toNullFloat64(cpuData.MHz),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
-	if err := VerifyRowsAffected(sqlResult, 1); err != nil {
-		return err
+	if res.RowsAffected() != 1 {
+		return fmt.Errorf("%w: expected 1 row affected, got %d", types.DatabaseAffectedRowsError, res.RowsAffected())
 	}
 	return nil
 }
@@ -1927,7 +1913,7 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 	}
 	defer cleanupPGXTx(tx, &err)
 
-	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
+	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
@@ -1952,42 +1938,40 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 	return nil
 }
 
-func (updateRepo *UpdateRepo) UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent *float64) (err error) {
-	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return err
-	}
-	if percent == nil || *percent < 0 || *percent > 100 {
-		return fmt.Errorf("percent must be between 0 and 100")
-	}
-	tx, err := updateRepo.DB.BeginTx(ctx, nil)
+func UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent float64) (err error) {
+	pgxPool, err := GetPGXPool()
 	if err != nil {
-		return fmt.Errorf("error beginning DB transaction: %w", err)
+		return fmt.Errorf("error getting PGX pool: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		} else {
-			err = tx.Commit()
-		}
-	}()
+
+	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("error beginning PGX transaction: %w", err)
+	}
+	defer cleanupPGXTx(tx, &err)
+
+	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
+	if err != nil {
+		return fmt.Errorf("error getting client UUID by tag: %w", err)
+	}
+
 	const sqlCode = `
 		UPDATE
 			job_queue
 		SET
 			battery_charge_pcnt = $2
 		WHERE
-			client_uuid = (SELECT uuid FROM ids WHERE tagnumber = $1 ORDER BY time DESC LIMIT 1)
+			client_uuid = $1
 	;`
-	var sqlResult sql.Result
-	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullInt64(tag),
-		ptrToNullFloat64(percent),
+	res, err := tx.Exec(ctx, sqlCode,
+		toNullUUID(clientUUID),
+		toNullFloat64(percent),
 	)
 	if err != nil {
 		return fmt.Errorf("error updating client's battery charge percent: %w", err)
 	}
-	if err := VerifyRowsAffected(sqlResult, 1); err != nil {
-		return fmt.Errorf("error while checking rows affected on job_queue table update: %w", err)
+	if res.RowsAffected() != 1 {
+		return fmt.Errorf("error updating client's battery charge percent: expected 1 row affected, got %d", res.RowsAffected())
 	}
 	return nil
 }
@@ -2776,18 +2760,18 @@ func UpsertJobStats(ctx context.Context, JobStatsDTO *types.JobStatsDTO) (err er
 }
 
 func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string) (err error) {
-	if err := types.IsTagnumberInt64Valid(tagnumber); err != nil {
-		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
-	}
-
 	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	var clientUUID uuid.UUID
+	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
+	}
+	defer cleanupPGXTx(tx, &err)
 
-	clientUUIDFromTag, err := GetClientUUIDByTag(ctx, pgxPool, tagnumber)
+	clientUUIDFromTag, err := GetClientUUIDByTag(ctx, tx, tagnumber)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -2797,6 +2781,7 @@ func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string
 		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
 
+	var clientUUID uuid.UUID
 	if clientUUIDFromTag != uuid.Nil && clientUUIDFromSerial != uuid.Nil {
 		if clientUUIDFromTag != clientUUIDFromSerial {
 			return fmt.Errorf("%w: %s (%d) and %s (%s) do not match", types.InvalidFieldError, "tagnumber", tagnumber, "serial", serial)
@@ -2807,12 +2792,6 @@ func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string
 	if clientUUID == uuid.Nil {
 		return fmt.Errorf("%w: %s (%d) and %s (%s) do not match any client", types.InvalidFieldError, "tagnumber", tagnumber, "serial", serial)
 	}
-
-	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
-	}
-	defer cleanupPGXTx(tx, &err)
 
 	const sqlCode = `
 	DELETE FROM os_info

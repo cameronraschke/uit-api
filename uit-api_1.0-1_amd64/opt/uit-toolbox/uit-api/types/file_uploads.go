@@ -11,7 +11,7 @@ type ImageManifestDTO struct {
 	SHA256Hash        []uint8    `json:"sha256_hash"`
 	FileName          string     `json:"filename"`
 	ThumbnailFileName *string    `json:"thumbnail_filename"`
-	FileSize          int64      `json:"file_size"`
+	FileSize          int        `json:"file_size"`
 	MimeType          string     `json:"mime_type"`
 	ExifTimestamp     *time.Time `json:"exif_timestamp"`
 	ResolutionX       *int64     `json:"resolution_x"`
@@ -31,7 +31,7 @@ type ImageManifestResponse struct {
 	SHA256Hash        *[]uint8   `json:"sha256_hash"`
 	FileName          *string    `json:"filename"`
 	ThumbnailFileName *string    `json:"thumbnail_filename"`
-	FileSize          *int64     `json:"file_size"`
+	FileSize          *int       `json:"file_size"`
 	MimeType          *string    `json:"mime_type"`
 	ExifTimestamp     *time.Time `json:"exif_timestamp"`
 	ResolutionX       *int64     `json:"resolution_x"`

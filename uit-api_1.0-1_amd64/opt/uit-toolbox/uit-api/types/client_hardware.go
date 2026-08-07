@@ -169,100 +169,57 @@ type NetworkData struct {
 }
 
 type BatteryDataRequest struct {
-	TransactionUUID           *string    `json:"transaction_uuid"`
-	UpdatedFromWindows        *bool      `json:"updated_from_windows"`
-	TimeStamp                 *time.Time `json:"timestamp"`
-	Tagnumber                 int64      `json:"tagnumber"`
-	SystemSerial              string     `json:"system_serial"`
-	BatteryChargeCycles       *int64     `json:"battery_charge_cycles"`
-	BatteryChargePcnt         *float64   `json:"battery_charge_pcnt"`
-	BatteryCurrentMaxCapacity *float64   `json:"battery_current_max_capacity"`
-	BatteryDesignCapacity     *float64   `json:"battery_design_capacity"`
-	BatteryManufactureDate    *string    `json:"battery_manufacture_date"`
-	BatteryManufacturer       *string    `json:"battery_manufacturer"`
-	BatteryModel              *string    `json:"battery_model"`
-	BatterySerial             *string    `json:"battery_serial"`
+	TransactionUUID           uuid.UUID `json:"transaction_uuid"`
+	UpdatedFromWindows        bool      `json:"updated_from_windows"`
+	TimeStamp                 time.Time `json:"timestamp"`
+	Tagnumber                 int64     `json:"tagnumber"`
+	SystemSerial              string    `json:"system_serial"`
+	BatteryChargeCycles       int64     `json:"battery_charge_cycles"`
+	BatteryChargePcnt         float64   `json:"battery_charge_pcnt"`
+	BatteryCurrentMaxCapacity float64   `json:"battery_current_max_capacity"`
+	BatteryDesignCapacity     float64   `json:"battery_design_capacity"`
+	BatteryManufactureDate    string    `json:"battery_manufacture_date"`
+	BatteryManufacturer       string    `json:"battery_manufacturer"`
+	BatteryModel              string    `json:"battery_model"`
+	BatterySerial             string    `json:"battery_serial"`
 }
 
-type BatteryDataDTO struct {
-	TransactionUUID           uuid.UUID
-	UpdatedFromWindows        bool
-	TimeStamp                 time.Time
-	Tagnumber                 int64
-	SystemSerial              string
-	BatteryChargeCycles       *int64
-	BatteryChargePcnt         *float64
-	BatteryCurrentMaxCapacity *float64
-	BatteryDesignCapacity     *float64
-	BatteryManufactureDate    *string
-	BatteryManufacturer       *string
-	BatteryModel              *string
-	BatterySerial             *string
-}
-
-func (b *BatteryDataRequest) ToDTO() (dto *BatteryDataDTO, err error) {
+func (b *BatteryDataRequest) IsValid() (errs []error) {
 	if b == nil {
-		return nil, fmt.Errorf("battery data request is nil")
+		return append(errs, fmt.Errorf("battery data request is nil"))
 	}
 
 	// transactionUUID is optional, generate a new one if not provided
-	var transactionUUID uuid.UUID
-	if b.TransactionUUID == nil {
-		transactionUUID, err = uuid.NewV7()
+	if b.TransactionUUID == uuid.Nil {
+		newUUID, err := uuid.NewV7()
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to generate transaction UUID", InvalidFieldError)
+			return append(errs, fmt.Errorf("%w: failed to generate transaction UUID", InvalidFieldError))
 		}
-	} else {
-		transactionUUID, err = uuid.Parse(*b.TransactionUUID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid transaction UUID", InvalidFieldError)
-		}
-	}
-
-	// updatedFromWindows is optional, default to false if not provided
-	updatedFromWindows := false
-	if b.UpdatedFromWindows != nil && *b.UpdatedFromWindows {
-		updatedFromWindows = *b.UpdatedFromWindows
+		b.TransactionUUID = newUUID
 	}
 
 	// timestamp is optional, use current UTC time if not provided
-	var timestamp time.Time
-	if b.TimeStamp == nil {
-		timestamp = time.Now().UTC()
+	if b.TimeStamp.IsZero() {
+		b.TimeStamp = time.Now().UTC()
 	} else {
-		if b.TimeStamp.IsZero() {
-			return nil, fmt.Errorf("%w: timestamp cannot be zero", InvalidFieldError)
-		}
-		timestamp = b.TimeStamp.UTC()
+		b.TimeStamp = b.TimeStamp.UTC()
 	}
 
 	// tagnumber
 	if err := IsTagnumberInt64Valid(b.Tagnumber); err != nil {
-		return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", err)
+		return append(errs, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", err))
 	}
 
 	// systemSerial is optional, but if provided, it must not be empty
 	if b.SystemSerial != "" {
 		if err := IsSystemSerialValid(b.SystemSerial); err != nil {
-			return nil, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "system_serial", err)
+			return append(errs, fmt.Errorf("%w for '%s': %v", InvalidFieldError, "system_serial", err))
 		}
 	}
 
-	dto = &BatteryDataDTO{
-		TransactionUUID:           transactionUUID,
-		UpdatedFromWindows:        updatedFromWindows,
-		TimeStamp:                 timestamp,
-		Tagnumber:                 b.Tagnumber,
-		SystemSerial:              b.SystemSerial,
-		BatteryChargeCycles:       b.BatteryChargeCycles,
-		BatteryChargePcnt:         b.BatteryChargePcnt,
-		BatteryCurrentMaxCapacity: b.BatteryCurrentMaxCapacity,
-		BatteryDesignCapacity:     b.BatteryDesignCapacity,
-		BatteryManufactureDate:    b.BatteryManufactureDate,
-		BatteryManufacturer:       b.BatteryManufacturer,
-		BatteryModel:              b.BatteryModel,
-		BatterySerial:             b.BatterySerial,
+	if b.BatteryChargePcnt < 0 || b.BatteryChargePcnt > 100 {
+		return append(errs, fmt.Errorf("%w: battery charge percent must be between 0 and 100", InvalidFieldError))
 	}
 
-	return dto, nil
+	return errs
 }

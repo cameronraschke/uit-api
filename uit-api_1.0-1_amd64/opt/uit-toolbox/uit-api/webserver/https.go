@@ -99,7 +99,7 @@ func StartWebServer(ctx context.Context) error {
 
 	// Job queue
 	httpsRouter.Handle("POST /api/client/job_stats", httpsFullAPIChain.ThenFunc(endpoints.UpdateJobStats))
-	httpsRouter.Handle("GET /api/client/job_name", httpsFullAPIChain.ThenFunc(endpoints.FetchClientJobName))
+	httpsRouter.Handle("GET /api/client/job_name", httpsFullAPIChain.ThenFunc(endpoints.GETClientJobName))
 	httpsRouter.Handle("GET /api/client/job_name_formatted", httpsFullAPIChain.ThenFunc(endpoints.FetchFormattedJobName))
 	httpsRouter.Handle("GET /api/client/job_queue_position", httpsFullAPIChain.ThenFunc(endpoints.FetchClientJobQueuePosition))
 	httpsRouter.Handle("POST /api/client/job_queue/update_job", httpsFullAPIChain.ThenFunc(endpoints.SetClientJob))
@@ -124,7 +124,7 @@ func StartWebServer(ctx context.Context) error {
 	httpsRouter.Handle("POST /api/client/init", httpsFullAPIChain.ThenFunc(endpoints.InitClient))
 	httpsRouter.Handle("POST /api/client/uptime", httpsFullAPIChain.ThenFunc(endpoints.SetClientUptime))
 	httpsRouter.Handle("POST /api/client/hardware", httpsFullAPIChain.ThenFunc(endpoints.SetClientHardwareData))
-	httpsRouter.Handle("POST /api/client/hardware/battery", httpsFullAPIChain.ThenFunc(endpoints.UpdateClientBatteryChargePcnt))
+	httpsRouter.Handle("POST /api/client/hardware/battery", httpsFullAPIChain.ThenFunc(endpoints.POSTClientBatteryChargePcnt))
 	httpsRouter.Handle("POST /api/client/health", httpsFullAPIChain.ThenFunc(endpoints.UpdateClientHealthCheck))
 	httpsRouter.Handle("POST /api/windows-client-info", httpsFullAPIChain.ThenFunc(endpoints.ReceiveWindowsClientInfo))
 	httpsRouter.Handle("POST /api/client/memory/usage", httpsFullAPIChain.ThenFunc(endpoints.SetClientMemoryUsageKB))
@@ -201,9 +201,11 @@ func StartWebServer(ctx context.Context) error {
 		SessionTicketsDisabled:   false,
 	}
 
+	sampleEvery := uint64(1000)
+	wrappedHandler := endpoints.MemSampleMiddleware(httpsRouter, sampleEvery, nil)
 	httpsServer := &http.Server{
 		Addr:              ":31411",
-		Handler:           httpsRouter,
+		Handler:           wrappedHandler,
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       apiTimeout,

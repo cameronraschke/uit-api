@@ -91,16 +91,16 @@ func InitEndpointConfig() error {
 			if merged.MaxDownloadSize == nil || merged.MaxUploadSize == nil {
 				switch endpointPath {
 				case "/api/overview/note":
-					merged.MaxUploadSize = new(int64)
+					merged.MaxUploadSize = new(int)
 					*merged.MaxUploadSize += ac.FormConstraints.Load().GeneralNote.MaxFormBytes
 				case "/api/inventory/update_client_data", "/api/client/files/upload":
 					maxOverallJSONSize := ac.FormConstraints.Load().InventoryForm.MaxJSONBytes
-					maxOverallImageSize := ac.FileConstraints.Load().ImageConstraints.MaxFileSize * int64(ac.FileConstraints.Load().ImageConstraints.MaxFileCount)
-					maxOverallVideoSize := ac.FileConstraints.Load().VideoConstraints.MaxFileSize * int64(ac.FileConstraints.Load().VideoConstraints.MaxFileCount)
-					merged.MaxUploadSize = new(int64)
+					maxOverallImageSize := ac.FileConstraints.Load().ImageConstraints.MaxFileSize * ac.FileConstraints.Load().ImageConstraints.MaxFileCount
+					maxOverallVideoSize := ac.FileConstraints.Load().VideoConstraints.MaxFileSize * ac.FileConstraints.Load().VideoConstraints.MaxFileCount
+					merged.MaxUploadSize = new(int)
 					*merged.MaxUploadSize += maxOverallJSONSize + maxOverallImageSize + maxOverallVideoSize
 				default:
-					merged.MaxUploadSize = new(int64)
+					merged.MaxUploadSize = new(int)
 					*merged.MaxUploadSize = 0
 				}
 			}
