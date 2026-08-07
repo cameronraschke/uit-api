@@ -15,11 +15,51 @@ const (
 	LastHeardTimeout = 20 * time.Second
 )
 
-type JobQueueRealtimeData struct {
+type JobQueueRealtimeDBRow struct {
+	ClientUUID           *uuid.UUID
+	Tagnumber            *int64
+	SerialNumber         *string
+	LastHeard            *time.Time
+	LastHeardUpdatedInDB *bool
+	SystemUptime         *time.Duration
+	AppUptime            *time.Duration
+	LiveImageBytes       []byte
+}
+
+func (dto *JobQueueRealtimeDBRow) ToDTO() (*JobQueueRealtimeDTO, error) {
+	if dto == nil {
+		return nil, fmt.Errorf("%w: %s", InvalidStructureError, "JobQueueRealtimeDBRow is nil")
+	}
+
+	if dto.ClientUUID == nil || *dto.ClientUUID == uuid.Nil {
+		return nil, fmt.Errorf("%w: %s", InvalidFieldError, "ClientUUID is nil or empty")
+	}
+
+	if err := IsTagnumberInt64PtrValid(dto.Tagnumber); err != nil {
+		return nil, err
+	}
+
+	if err := IsSystemSerialValid(dereferenceStringPtr(dto.SerialNumber)); err != nil {
+		return nil, err
+	}
+
+	return &JobQueueRealtimeDTO{
+		ClientUUID:           dereferenceUUIDPtr(dto.ClientUUID),
+		Tagnumber:            dereferenceInt64Ptr(dto.Tagnumber),
+		SerialNumber:         dereferenceStringPtr(dto.SerialNumber),
+		LastHeard:            dereferenceTimePtr(dto.LastHeard),
+		LastHeardUpdatedInDB: dereferenceBoolPtr(dto.LastHeardUpdatedInDB),
+		SystemUptime:         time.Duration(dereferenceDurationPtr(dto.SystemUptime).Seconds()) * time.Second,
+		AppUptime:            time.Duration(dereferenceDurationPtr(dto.AppUptime).Seconds()) * time.Second,
+		LiveImageBytes:       dto.LiveImageBytes,
+	}, nil
+}
+
+type JobQueueRealtimeDTO struct {
 	ClientUUID           uuid.UUID
 	Tagnumber            int64
 	SerialNumber         string
-	LastHeard            *time.Time
+	LastHeard            time.Time
 	LastHeardUpdatedInDB bool
 	SystemUptime         time.Duration
 	AppUptime            time.Duration

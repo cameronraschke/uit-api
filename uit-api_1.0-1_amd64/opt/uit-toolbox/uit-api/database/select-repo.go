@@ -14,6 +14,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"uit-api/appstate"
@@ -1522,27 +1523,14 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 	LEFT JOIN static_department_info ON static_department_info.department_name = locations.department_name
 	;`
 
-	onlineClientsMap, err := appstate.GetAllOnlineClientsData()
+	onlineRealtimeData, err := appstate.GetAllOnlineClientsData()
 	if err != nil {
 		return nil, []error{fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)}
 	}
-
-	onlineClientsMapUUIDAsKey := make(map[uuid.UUID]types.JobQueueRealtimeData, len(onlineClientsMap))
-	for _, realtimeData := range onlineClientsMap {
-		onlineClientsMapUUIDAsKey[realtimeData.ClientUUID] = types.JobQueueRealtimeData{
-			ClientUUID:   realtimeData.ClientUUID,
-			LastHeard:    realtimeData.LastHeard,
-			SystemUptime: realtimeData.SystemUptime,
-			AppUptime:    realtimeData.AppUptime,
-		}
+	onlineClientUUIDs, err := appstate.GetAllOnlineClientUUIDs()
+	if err != nil {
+		return nil, []error{fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)}
 	}
-
-	onlineClientUUIDs := make([]uuid.UUID, 0, len(onlineClientsMap))
-	for _, realtimeData := range onlineClientsMap {
-		onlineClientUUIDs = append(onlineClientUUIDs, realtimeData.ClientUUID)
-	}
-
-	jobQueueRows := make([]types.JobQueueDBRow, 0, approxClientCount)
 
 	rows, err := pgxPool.Query(ctx, sqlQuery, onlineClientUUIDs)
 	if err != nil {
@@ -1550,6 +1538,7 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 	}
 	defer rows.Close()
 
+	jobQueueRows := make([]types.JobQueueDBRow, 0, approxClientCount)
 	for rows.Next() {
 		if ctx.Err() != nil {
 			return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowIterationError, ctx.Err())}
@@ -1613,24 +1602,25 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 		); err != nil {
 			return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)}
 		}
-		row.LastHeard = onlineClientsMapUUIDAsKey[clientUUID].LastHeard
-		row.ClientUUID = &clientUUID
-		systemUptime := onlineClientsMapUUIDAsKey[clientUUID].SystemUptime * time.Second
-		appUptime := onlineClientsMapUUIDAsKey[clientUUID].AppUptime * time.Second
-		row.SystemUptime = &systemUptime
-		row.AppUptime = &appUptime
+		// If a client is online, then add last heard, system uptime, and app uptime to the row
+		if slices.Contains(onlineClientUUIDs, clientUUID) && row.Tagnumber != nil {
+			lastHeard := onlineRealtimeData[*row.Tagnumber].LastHeard
+			row.LastHeard = &lastHeard
+			systemUptime := onlineRealtimeData[*row.Tagnumber].SystemUptime
+			row.SystemUptime = &systemUptime
+			appUptime := onlineRealtimeData[*row.Tagnumber].AppUptime
+			row.AppUptime = &appUptime
+		}
 		jobQueueRows = append(jobQueueRows, row)
 	}
 	if rows.Err() != nil {
 		return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowIterationError, rows.Err())}
 	}
-	if len(jobQueueRows) == 0 {
-		return nil, nil
-	}
+
 	dto := make([]types.JobQueueDTO, 0, len(jobQueueRows))
 	conversionErrs := make([]error, 0)
-	for i := range jobQueueRows {
-		dtoItem, err := jobQueueRows[i].ToDTO()
+	for _, row := range jobQueueRows {
+		dtoItem, err := row.ToDTO()
 		if err != nil {
 			conversionErrs = append(conversionErrs, err)
 			continue
@@ -2705,13 +2695,13 @@ func ConvertClientInfoToCSV(ctx context.Context, tags []int64) (*bytes.Buffer, e
 	return &buf, nil
 }
 
-func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData, error) {
+func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeDTO, error) {
 	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	jobMapCopy := make(map[int64]types.JobQueueRealtimeData, 600)
+	jobMapCopy := make(map[int64]types.JobQueueRealtimeDTO, 600)
 	const sqlCode = `
 		SELECT
 			ids.uuid,
@@ -2735,7 +2725,7 @@ func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%w: %w", types.DatabaseRowIterationError, ctx.Err())
 		}
-		var jobData types.JobQueueRealtimeData
+		var jobData types.JobQueueRealtimeDBRow
 		if err := rows.Scan(
 			&jobData.ClientUUID,
 			&jobData.Tagnumber,
@@ -2747,7 +2737,14 @@ func GetAllLiveOSData(ctx context.Context) (map[int64]types.JobQueueRealtimeData
 		); err != nil {
 			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
 		}
-		jobMapCopy[jobData.Tagnumber] = jobData
+		if jobData.Tagnumber == nil {
+			continue // Skip this entry if Tagnumber is nil
+		}
+		dto, err := jobData.ToDTO()
+		if err != nil {
+			return nil, fmt.Errorf("Error converting JobQueueRealtimeDBRow to JobQueueRealtimeDTO: %w", err)
+		}
+		jobMapCopy[*jobData.Tagnumber] = *dto
 	}
 
 	return jobMapCopy, nil

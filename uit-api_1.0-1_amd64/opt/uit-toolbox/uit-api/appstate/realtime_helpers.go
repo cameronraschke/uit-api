@@ -119,11 +119,11 @@ func SetRealtimeClientUUID(tag int64, uuid uuid.UUID) error {
 	return nil
 }
 
-func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
+func UpdateClientLastHeardInAppState(tag int64, lastHeard time.Time) error {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
-	if lastHeard == nil || lastHeard.IsZero() {
+	if lastHeard.IsZero() {
 		// return fmt.Errorf("lastHeard is nil")
 		return nil // No need to update if lastHeard is nil or zero, just skip
 	}
@@ -144,11 +144,11 @@ func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
 	return nil
 }
 
-func ReplaceClientRealtimeData(tag int64, newVal types.JobQueueRealtimeData) error {
+func ReplaceClientRealtimeData(tag int64, newVal types.JobQueueRealtimeDTO) error {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return types.CreateInvalidFieldError("tagnumber", err)
 	}
-	if newVal.LastHeard == nil || newVal.LastHeard.IsZero() {
+	if newVal.LastHeard.IsZero() {
 		// return fmt.Errorf("lastHeard is nil, skipping update for tag %d", tag)
 		return nil // No need to update if lastHeard is zero, just skip
 	}
@@ -165,7 +165,7 @@ func ReplaceClientRealtimeData(tag int64, newVal types.JobQueueRealtimeData) err
 	return nil
 }
 
-func isClientOnline(clientData types.JobQueueRealtimeData) bool {
+func isClientOnline(clientData types.JobQueueRealtimeDTO) bool {
 	if clientData.LastHeard.IsZero() {
 		return false
 	}
@@ -216,7 +216,7 @@ func GetAllOnlineClientUUIDs() ([]uuid.UUID, error) {
 	return uuids, nil
 }
 
-func GetRealtimeClientData(tag int64) (*types.JobQueueRealtimeData, error) {
+func GetRealtimeClientData(tag int64) (*types.JobQueueRealtimeDTO, error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, types.CreateInvalidFieldError("tagnumber", err)
 	}
@@ -235,7 +235,7 @@ func GetRealtimeClientData(tag int64) (*types.JobQueueRealtimeData, error) {
 	return &clientData, nil
 }
 
-func GetAllOnlineClientsData() (clientDataCopy map[int64]types.JobQueueRealtimeData, err error) {
+func GetAllOnlineClientsData() (clientDataCopy map[int64]types.JobQueueRealtimeDTO, err error) {
 	appState, err := GetAppState()
 	if err != nil || appState == nil {
 		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
@@ -244,7 +244,7 @@ func GetAllOnlineClientsData() (clientDataCopy map[int64]types.JobQueueRealtimeD
 	defer appState.ClientRealtimeDataMu.RUnlock()
 
 	// Create a copy of the map to avoid race conditions
-	clientDataCopy = make(map[int64]types.JobQueueRealtimeData, len(appState.ClientRealtimeData))
+	clientDataCopy = make(map[int64]types.JobQueueRealtimeDTO, len(appState.ClientRealtimeData))
 	for tag, clientData := range appState.ClientRealtimeData {
 		if isClientOnline(clientData) {
 			clientDataCopy[tag] = clientData
@@ -279,7 +279,7 @@ func ClearOfflineLiveImageBytes() (entriesCleared int64, entriesSkipped int64, t
 	return entriesCleared, entriesSkipped, totalEntries
 }
 
-func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtimeData, err error) {
+func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtimeDTO, err error) {
 	appState, err := GetAppState()
 	if err != nil || appState == nil {
 		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
@@ -288,7 +288,7 @@ func GetAllClientRealtimeData() (clientDataCopy map[int64]types.JobQueueRealtime
 	defer appState.ClientRealtimeDataMu.RUnlock()
 
 	// Create a copy of the map to avoid race conditions
-	clientDataCopy = make(map[int64]types.JobQueueRealtimeData, len(appState.ClientRealtimeData))
+	clientDataCopy = make(map[int64]types.JobQueueRealtimeDTO, len(appState.ClientRealtimeData))
 	maps.Copy(clientDataCopy, appState.ClientRealtimeData)
 
 	if len(clientDataCopy) == 0 {

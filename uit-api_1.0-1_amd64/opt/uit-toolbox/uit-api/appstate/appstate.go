@@ -23,7 +23,7 @@ func InitAppState() error {
 	appStateCopy.SessionSecret = sessionSecret
 
 	// Initialize live image map
-	clientRealtimeDataMap := make(map[int64]types.JobQueueRealtimeData)
+	clientRealtimeDataMap := make(map[int64]types.JobQueueRealtimeDTO, 300)
 	appStateCopy.ClientRealtimeDataMu.Lock()
 	appStateCopy.ClientRealtimeData = clientRealtimeDataMap
 	appStateCopy.ClientRealtimeDataMu.Unlock()

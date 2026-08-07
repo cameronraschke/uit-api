@@ -11,7 +11,7 @@ type AppState struct {
 	AppStateMu           sync.Mutex
 	SessionSecret        []byte
 	ClientRealtimeDataMu sync.RWMutex
-	ClientRealtimeData   map[int64]JobQueueRealtimeData
+	ClientRealtimeData   map[int64]JobQueueRealtimeDTO
 }
 
 type AppConfiguration struct {
@@ -91,6 +91,6 @@ type WebEndpointConfig struct {
 	StatusCode      int      `json:"status_code"`
 	Redirect        *bool    `json:"redirect"`
 	RedirectURL     string   `json:"redirect_url"`
-	MaxUploadSize   *int   `json:"max_upload_size"`
-	MaxDownloadSize *int   `json:"max_download_size"`
+	MaxUploadSize   *int     `json:"max_upload_size"`
+	MaxDownloadSize *int     `json:"max_download_size"`
 }
