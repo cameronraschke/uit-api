@@ -259,7 +259,7 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []ba
 			continue
 		}
 
-		if data.LastHeard.IsZero() {
+		if data.LastHeard == nil || data.LastHeard.IsZero() {
 			logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelWarn, Message: fmt.Sprintf("skipping realtime update for tag '%d': invalid last_heard value", tag)})
 			continue
 		}
@@ -270,7 +270,7 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []ba
 
 		attempted++
 		updateCtx, updateCancel := context.WithTimeout(backgroundCtx, 5*time.Second) // 5 seconds for each update
-		if err := database.UpdateClientLastHeard(updateCtx, tag, data.LastHeard); err != nil {
+		if err := database.UpdateClientLastHeard(updateCtx, tag, *data.LastHeard); err != nil {
 			failed++
 			logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelError, Message: fmt.Sprintf("cannot update last_heard value for tag '%d': %v", tag, err)})
 			updateCancel()

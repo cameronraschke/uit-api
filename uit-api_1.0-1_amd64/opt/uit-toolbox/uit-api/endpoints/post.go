@@ -1527,15 +1527,15 @@ func SetClientHardwareData(w http.ResponseWriter, req *http.Request) {
 		USAMatched := types.USADateRegex.MatchString(hardwareData.BatteryManufactureDate)
 		ISOMatched := types.ISODateRegex.MatchString(hardwareData.BatteryManufactureDate)
 		if !USAMatched && !ISOMatched {
-			hardwareData.BatteryManufactureDateParsed = time.Time{}
+			hardwareData.BatteryManufactureDateParsed = nil
 		}
 		if USAMatched {
 			parsedTime, err := time.Parse("01/02/2006", hardwareData.BatteryManufactureDate)
 			if err != nil {
 				log.Warn("Failed to parse battery manufacture date in MM/DD/YYYY format: " + err.Error())
-				hardwareData.BatteryManufactureDateParsed = time.Time{}
+				hardwareData.BatteryManufactureDateParsed = nil
 			} else {
-				hardwareData.BatteryManufactureDateParsed = parsedTime
+				hardwareData.BatteryManufactureDateParsed = &parsedTime
 			}
 		}
 	}

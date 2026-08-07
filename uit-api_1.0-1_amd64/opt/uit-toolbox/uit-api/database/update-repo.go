@@ -1737,7 +1737,7 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData types.ClientHard
 			stringToSqlNull(hardwareData.BatteryModel),
 			int64ToSqlNull(hardwareData.BatteryChargeCycles),
 			float64ToSqlNull(hardwareData.BatteryDesignCapacity),
-			timeToSqlNull(hardwareData.BatteryManufactureDateParsed),
+			timePtrToSqlNull(hardwareData.BatteryManufactureDateParsed),
 			float64ToSqlNull(hardwareData.BatteryCurrentMaxCapacity),
 		)
 		if err != nil {
@@ -1822,7 +1822,7 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData types.ClientHard
 		clientUUID,
 		stringToSqlNull(hardwareData.BiosVersion),
 		stringToSqlNull(hardwareData.BiosFirmware),
-		timeToSqlNull(hardwareData.BiosReleaseDate),
+		timePtrToSqlNull(hardwareData.BiosReleaseDate),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1868,7 +1868,7 @@ func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *t
 	var res sql.Result
 	res, err = tx.ExecContext(ctx, sqlCode,
 		int64ToSqlNull(jobQueue.Tagnumber),
-		timeToSqlNull(jobQueue.JobQueuedAt),
+		timePtrToSqlNull(jobQueue.JobQueuedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)

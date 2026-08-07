@@ -137,7 +137,7 @@ func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
 	defer appState.ClientRealtimeDataMu.Unlock()
 	clientData := appState.ClientRealtimeData[tag]
 	clientData.Tagnumber = tag
-	clientData.LastHeard = *lastHeard       // nil check above
+	clientData.LastHeard = lastHeard       // nil check above
 	clientData.LastHeardUpdatedInDB = false // Mark as not updated in DB, this function only gets used in post.go
 	appState.ClientRealtimeData[tag] = clientData
 

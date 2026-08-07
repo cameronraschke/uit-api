@@ -46,13 +46,13 @@ type ClientHardwareView struct {
 	BatteryDesignCapacity        float64 `json:"battery_design_capacity"`
 	BatteryManufacturer          string  `json:"battery_manufacturer"`
 	BatteryManufactureDate       string  `json:"battery_manufacture_date"`
-	BatteryManufactureDateParsed time.Time
-	BiosVersion                  string    `json:"bios_version"`
-	BiosReleaseDate              time.Time `json:"bios_release_date"`
-	BiosFirmware                 string    `json:"bios_firmware"`
-	MemorySerial                 []string  `json:"memory_serial"`
-	MemoryCapacityKB             int64     `json:"memory_capacity_kb"`
-	MemorySpeedMHz               int64     `json:"memory_speed_mhz"`
+	BatteryManufactureDateParsed *time.Time
+	BiosVersion                  string     `json:"bios_version"`
+	BiosReleaseDate              *time.Time `json:"bios_release_date"`
+	BiosFirmware                 string     `json:"bios_firmware"`
+	MemorySerial                 []string   `json:"memory_serial"`
+	MemoryCapacityKB             int64      `json:"memory_capacity_kb"`
+	MemorySpeedMHz               int64      `json:"memory_speed_mhz"`
 }
 
 type ClientHealthCheck struct {
@@ -103,15 +103,15 @@ func (c CPUDataUpdateRequest) IsValid() error {
 	if err := IsTagnumberInt64Valid(c.Tagnumber); err != nil {
 		return fmt.Errorf("%w for '%s': %v", InvalidFieldError, "tagnumber", err)
 	}
-	if c.UsagePercent < 0 || c.UsagePercent > 110 {
-		return fmt.Errorf("%w: CPU usage percent must be between 0 and 100", InvalidFieldError)
-	}
-	if c.MHz <= 0 {
-		return fmt.Errorf("%w: CPU MHz must be greater than 0", InvalidFieldError)
-	}
-	if c.MillidegreesC <= 0 {
-		return fmt.Errorf("%w: CPU temperature must be greater than 0", InvalidFieldError)
-	}
+	// if c.UsagePercent < 0 || c.UsagePercent > 110 {
+	// 	return fmt.Errorf("%w: CPU usage percent must be between 0 and 100", InvalidFieldError)
+	// }
+	// if c.MHz <= 0 {
+	// 	return fmt.Errorf("%w: CPU MHz must be greater than 0", InvalidFieldError)
+	// }
+	// if c.MillidegreesC <= 0 {
+	// 	return fmt.Errorf("%w: CPU temperature must be greater than 0", InvalidFieldError)
+	// }
 	return nil
 }
 
