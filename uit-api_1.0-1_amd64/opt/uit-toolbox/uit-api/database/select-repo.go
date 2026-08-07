@@ -1299,10 +1299,10 @@ func ModifyClientConfigErrorResults(results []types.InventoryTableRow) ([]types.
 	return results, nil
 }
 
-func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error) {
+func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 	pgxPool, err := GetPGXPool()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
+		return nil, []error{fmt.Errorf("%w: %w", types.DatabaseConnError, err)}
 	}
 
 	const sqlQuery = `
@@ -1524,7 +1524,7 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 
 	onlineClientsMap, err := appstate.GetAllOnlineClientsData()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)
+		return nil, []error{fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)}
 	}
 
 	onlineClientsMapUUIDAsKey := make(map[uuid.UUID]types.JobQueueRealtimeData, len(onlineClientsMap))
@@ -1542,19 +1542,19 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 		onlineClientUUIDs = append(onlineClientUUIDs, realtimeData.ClientUUID)
 	}
 
-	jobQueueRows := make([]types.JobQueueTableRowView, 0, approxClientCount)
+	jobQueueRows := make([]types.JobQueueDBRow, 0, approxClientCount)
 
 	rows, err := pgxPool.Query(ctx, sqlQuery, onlineClientUUIDs)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
+		return nil, []error{fmt.Errorf("%w: %w", types.DatabaseQueryError, err)}
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%w: %w", types.DatabaseRowIterationError, ctx.Err())
+			return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowIterationError, ctx.Err())}
 		}
-		var row types.JobQueueTableRowView
+		var row types.JobQueueDBRow
 		var clientUUID uuid.UUID
 		if err := rows.Scan(
 			&clientUUID,
@@ -1611,21 +1611,33 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 			&row.PluggedIn,
 			&row.PowerUsage,
 		); err != nil {
-			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
+			return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)}
 		}
 		row.LastHeard = onlineClientsMapUUIDAsKey[clientUUID].LastHeard
-		row.ClientUUID = clientUUID
-		row.SystemUptime = time.Duration(onlineClientsMapUUIDAsKey[clientUUID].SystemUptime.Seconds())
-		row.AppUptime = time.Duration(onlineClientsMapUUIDAsKey[clientUUID].AppUptime.Seconds())
+		row.ClientUUID = &clientUUID
+		systemUptime := onlineClientsMapUUIDAsKey[clientUUID].SystemUptime * time.Second
+		appUptime := onlineClientsMapUUIDAsKey[clientUUID].AppUptime * time.Second
+		row.SystemUptime = &systemUptime
+		row.AppUptime = &appUptime
 		jobQueueRows = append(jobQueueRows, row)
 	}
 	if rows.Err() != nil {
-		return nil, fmt.Errorf("%w: %w", types.DatabaseRowIterationError, rows.Err())
+		return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowIterationError, rows.Err())}
 	}
 	if len(jobQueueRows) == 0 {
 		return nil, nil
 	}
-	return jobQueueRows, nil
+	dto := make([]types.JobQueueDTO, 0, len(jobQueueRows))
+	conversionErrs := make([]error, 0)
+	for i := range jobQueueRows {
+		dtoItem, err := jobQueueRows[i].ToDTO()
+		if err != nil {
+			conversionErrs = append(conversionErrs, err)
+			continue
+		}
+		dto = append(dto, *dtoItem)
+	}
+	return dto, conversionErrs
 }
 
 func SelectAllJobs(ctx context.Context) ([]types.AllJobsRow, error) {

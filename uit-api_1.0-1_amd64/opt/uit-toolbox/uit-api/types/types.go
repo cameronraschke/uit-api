@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -119,6 +121,62 @@ func copyBoolPtr(value *bool) *bool {
 	return &v
 }
 
+func dereferenceStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func dereferenceIntPtr(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func dereferenceInt64Ptr(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func dereferenceTimePtr(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
+}
+
+func dereferenceBoolPtr(value *bool) bool {
+	if value == nil {
+		return false
+	}
+	return *value
+}
+
+func dereferenceDurationPtr(value *time.Duration) time.Duration {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func dereferenceUUIDPtr(value *uuid.UUID) uuid.UUID {
+	if value == nil {
+		return uuid.Nil
+	}
+	return *value
+}
+
+func dereferenceFloat64Ptr(value *float64) float64 {
+	if value == nil {
+		return 0.0
+	}
+	return *value
+}
+
 func IsSystemSerialValid(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return fmt.Errorf("system serial is empty or nil")
@@ -137,6 +195,16 @@ func IsSystemSerialValid(s string) error {
 func IsTagnumberInt64Valid(i int64) error {
 	if i < minTagnumberValue || i > maxTagnumberValue {
 		return fmt.Errorf("tagnumber is out of valid numeric range")
+	}
+	return nil
+}
+
+func IsTagnumberInt64PtrValid(i *int64) error {
+	if i == nil {
+		return fmt.Errorf("tagnumber is nil")
+	}
+	if err := IsTagnumberInt64Valid(*i); err != nil {
+		return fmt.Errorf("tagnumber is invalid: %v", err)
 	}
 	return nil
 }

@@ -24,7 +24,7 @@ type Update interface {
 	UpdateClientNetworkUsage(ctx context.Context, networkData *types.NetworkData) (err error)
 	UpdateClientAppUptime(ctx context.Context, tag int64, appUptime int64) (err error)
 	UpdateClientSystemUptime(ctx context.Context, tag int64, systemUptime int64) (err error)
-	UpdateJobQueuedAt(ctx context.Context, jobQueue *types.JobQueueTableRowView) (err error)
+	UpdateJobQueuedAt(ctx context.Context, jobQueue *types.JobQueueDTO) (err error)
 	BulkUpdateClientLocation(ctx context.Context, transactionUUID *string, tag int64, location *string) (err error)
 }
 
@@ -1093,7 +1093,6 @@ func UpsertClientCPUUsage(ctx context.Context, cpuData types.CPUDataUpdateReques
 
 func UpsertClientCPUMHz(ctx context.Context, cpuData types.CPUDataUpdateRequest) (err error) {
 
-
 	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseConnError, err)
@@ -1833,7 +1832,7 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData types.ClientHard
 	return nil
 }
 
-func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *types.JobQueueTableRowView) (err error) {
+func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *types.JobQueueDTO) (err error) {
 	if jobQueue == nil {
 		return fmt.Errorf("%w: %s", types.InvalidStructureError, "jobQueue is nil")
 	}
@@ -1868,7 +1867,7 @@ func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *t
 	var res sql.Result
 	res, err = tx.ExecContext(ctx, sqlCode,
 		int64ToSqlNull(jobQueue.Tagnumber),
-		timePtrToSqlNull(jobQueue.JobQueuedAt),
+		timeToSqlNull(jobQueue.JobQueuedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)

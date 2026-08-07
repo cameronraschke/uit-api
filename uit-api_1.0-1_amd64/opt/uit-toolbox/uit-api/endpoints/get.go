@@ -518,9 +518,17 @@ func GetJobQueueTable(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	log := GetLoggerFromContext(ctx).With(slog.String("func", "GetJobQueueTable"))
 
-	jobQueueTable, err := database.GetJobQueueTable(ctx)
-	if err != nil {
-		log.Warn("Query error (GetJobQueueTable): " + err.Error())
+	jobQueueTable, errs := database.GetJobQueueTable(ctx)
+	if len(errs) > 0 {
+		s := strings.Builder{}
+		s.WriteString("Errors occurred while retrieving job queue table: ")
+		for i, err := range errs {
+			if i > 0 {
+				s.WriteString("; ")
+			}
+			s.WriteString(err.Error())
+		}
+		log.Warn(s.String())
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
 	}

@@ -1387,21 +1387,28 @@ func SetAllJobs(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var clientJson types.JobQueueTableRowView
+	var clientJson types.JobQueueDBRow
 	if err := json.Unmarshal(clientBody, &clientJson); err != nil {
 		log.Warn("Cannot decode JSON: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if utf8.RuneCountInString(clientJson.JobName) < 1 ||
-		utf8.RuneCountInString(clientJson.JobName) > 64 {
+	dto, err := clientJson.ToDTO()
+	if err != nil {
+		log.Warn("Cannot convert to DTO: " + err.Error())
+		WriteJsonError(w, http.StatusBadRequest)
+		return
+	}
+
+	if utf8.RuneCountInString(dto.JobName) < 1 ||
+		utf8.RuneCountInString(dto.JobName) > 64 {
 		log.Warn("Invalid job name length")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err = database.SetAllOnlineClientJobs(req.Context(), clientJson.JobName); err != nil {
+	if err = database.SetAllOnlineClientJobs(req.Context(), dto.JobName); err != nil {
 		log.Error("Failed to set all jobs: " + err.Error())
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -1421,28 +1428,35 @@ func SetClientJob(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var clientJson types.JobQueueTableRowView
+	var clientJson types.JobQueueDBRow
 	if err := json.Unmarshal(clientBody, &clientJson); err != nil {
 		log.Warn("Cannot decode JSON: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := types.IsTagnumberInt64Valid(clientJson.Tagnumber); err != nil {
+	dto, err := clientJson.ToDTO()
+	if err != nil {
+		log.Warn("Cannot convert to DTO: " + err.Error())
+		WriteJsonError(w, http.StatusBadRequest)
+		return
+	}
+
+	if err := types.IsTagnumberInt64Valid(dto.Tagnumber); err != nil {
 		log.Warn("Invalid tagnumber: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
 	// Job name checks
-	if utf8.RuneCountInString(clientJson.JobName) < 1 ||
-		utf8.RuneCountInString(clientJson.JobName) > 64 {
+	if utf8.RuneCountInString(dto.JobName) < 1 ||
+		utf8.RuneCountInString(dto.JobName) > 64 {
 		log.Warn("Invalid job name length")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err = database.SetClientJob(req.Context(), clientJson.Tagnumber, clientJson.JobName); err != nil {
+	if err = database.SetClientJob(req.Context(), dto.Tagnumber, dto.JobName); err != nil {
 		log.Error("Failed to set client job: " + err.Error())
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -1556,14 +1570,16 @@ func SetJobQueuedAt(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var reqBody types.JobQueueTableRowView
+	var reqBody types.JobQueueDBRow
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		log.Warn("Error unmarshaling request body" + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if err := types.IsTagnumberInt64Valid(reqBody.Tagnumber); err != nil {
-		log.Warn(fmt.Sprintf("%v for '%s': %v", types.InvalidRequestFieldError, "tagnumber", err))
+
+	dto, err := reqBody.ToDTO()
+	if err != nil {
+		log.Warn("Error converting request body to DTO: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -1575,7 +1591,7 @@ func SetJobQueuedAt(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := db.UpdateJobQueuedAt(req.Context(), &reqBody); err != nil {
+	if err := db.UpdateJobQueuedAt(req.Context(), dto); err != nil {
 		log.Warn("DB error: " + err.Error())
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
