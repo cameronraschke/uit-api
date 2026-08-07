@@ -82,6 +82,18 @@ func MemSampleMiddleware(next http.Handler, sampleEvery uint64, log *slog.Logger
 	})
 }
 
+func PanicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				fmt.Fprintf(os.Stderr, "Panic recovered: %v\n%s\n", err, string(debug.Stack()))
+				WriteJsonError(w, http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, req)
+	})
+}
+
 func StoreLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		requestIpStr, _, _ := net.SplitHostPort(req.RemoteAddr)
@@ -99,18 +111,6 @@ func StoreLoggerMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, req.WithContext(ctx))
-	})
-}
-
-func PanicRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				fmt.Fprintf(os.Stderr, "Panic recovered: %v\n%s", err, string(debug.Stack()))
-				WriteJsonError(w, http.StatusInternalServerError)
-			}
-		}()
-		next.ServeHTTP(w, req)
 	})
 }
 
@@ -1030,9 +1030,9 @@ func CookieAuthMiddleware(next http.Handler) http.Handler {
 				return
 			}
 			// log.Debug("Auth session TTL is low (" + currentSession.SessionTTL.String() + "), sending tokens to client: " + reqAddr.String())
-			http.SetCookie(w, updatedSession.SessionCookie)
-			http.SetCookie(w, updatedSession.BasicCookie)
-			http.SetCookie(w, updatedSession.BearerCookie)
+			http.SetCookie(w, &updatedSession.SessionCookie)
+			http.SetCookie(w, &updatedSession.BasicCookie)
+			http.SetCookie(w, &updatedSession.BearerCookie)
 			// http.SetCookie(w, currentSession.CSRFCookie)
 			next.ServeHTTP(w, req)
 			return

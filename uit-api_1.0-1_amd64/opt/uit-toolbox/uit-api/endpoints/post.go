@@ -111,9 +111,9 @@ func WebAuthEndpoint(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, authSessionCookies.SessionCookie)
-	http.SetCookie(w, authSessionCookies.BasicCookie)
-	http.SetCookie(w, authSessionCookies.BearerCookie)
+	http.SetCookie(w, &authSessionCookies.SessionCookie)
+	http.SetCookie(w, &authSessionCookies.BasicCookie)
+	http.SetCookie(w, &authSessionCookies.BearerCookie)
 	// http.SetCookie(w, authSessionCookies.CSRFCookie)
 
 	var responseJson = new(types.AuthStatusResponse)
@@ -145,24 +145,21 @@ func SetClientMemoryUsageKB(w http.ResponseWriter, req *http.Request) {
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	memoryData, err := memInfoRequest.ToDTO()
-	if err != nil {
-		log.Warnf("Invalid memory data request: %v", err)
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if memoryData == nil {
-		log.Warnf("Memory data request is nil after mapping to DTO")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if memoryData.TotalUsageKB <= 0 {
-		log.Warnf("Invalid memory usage value")
+	if errs := memInfoRequest.IsValid(); len(errs) > 0 {
+		s := strings.Builder{}
+		s.WriteString("Invalid memory data request: ")
+		for i, e := range errs {
+			if i > 0 {
+				s.WriteString("; ")
+			}
+			s.WriteString(e.Error())
+		}
+		log.Warn(s.String())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := database.UpsertClientMemoryUsageKB(req.Context(), *memoryData); err != nil {
+	if err := database.UpsertClientMemoryUsageKB(req.Context(), memInfoRequest); err != nil {
 		log.Errorf("Failed to update client memory usage: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -191,24 +188,27 @@ func SetClientMemoryCapacityKB(w http.ResponseWriter, req *http.Request) {
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	memoryData, err := memInfoRequest.ToDTO()
-	if err != nil {
-		log.Warnf("Invalid memory data request: %v", err)
+	if errs := memInfoRequest.IsValid(); len(errs) > 0 {
+		s := strings.Builder{}
+		s.WriteString("Invalid memory data request: ")
+		for i, e := range errs {
+			if i > 0 {
+				s.WriteString("; ")
+			}
+			s.WriteString(e.Error())
+		}
+		log.Warn(s.String())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if memoryData == nil {
-		log.Warnf("Memory data request is nil after mapping to DTO")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if memoryData.TotalCapacityKB <= 0 {
+
+	if memInfoRequest.TotalCapacityKB <= 0 {
 		log.Warnf("Invalid memory capacity value")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := database.UpsertClientMemoryCapacityKB(req.Context(), *memoryData); err != nil {
+	if err := database.UpsertClientMemoryCapacityKB(req.Context(), memInfoRequest); err != nil {
 		log.Errorf("Failed to update client memory capacity: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -237,14 +237,13 @@ func SetClientCPUUsage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cpuDTO, err := cpuDataRequest.ToDTO()
-	if err != nil {
+	if err := cpuDataRequest.IsValid(); err != nil {
 		log.Warnf("Invalid CPU data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := database.UpsertClientCPUUsage(req.Context(), cpuDTO); err != nil {
+	if err := database.UpsertClientCPUUsage(req.Context(), cpuDataRequest); err != nil {
 		log.Errorf("Failed to update client CPU usage: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -274,14 +273,13 @@ func SetClientCPUMHz(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cpuData, err := cpuUpdateRequest.ToDTO()
-	if err != nil {
+	if err := cpuUpdateRequest.IsValid(); err != nil {
 		log.Warnf("Invalid CPU data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := database.UpsertClientCPUMHz(req.Context(), cpuData); err != nil {
+	if err := database.UpsertClientCPUMHz(req.Context(), cpuUpdateRequest); err != nil {
 		log.Errorf("Failed to update client CPU MHz: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -361,14 +359,13 @@ func SetClientCPUTemperature(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cpuData, err := cpuDataRequest.ToDTO()
-	if err != nil {
+	if err := cpuDataRequest.IsValid(); err != nil {
 		log.Warnf("Invalid CPU data request: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 
-	if err := database.UpsertClientCPUTemperature(req.Context(), cpuData); err != nil {
+	if err := database.UpsertClientCPUTemperature(req.Context(), cpuDataRequest); err != nil {
 		log.Errorf("Failed to update client CPU temperature: %v", err)
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -550,14 +547,7 @@ func SetClientLastHeard(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		tx, err := pgxPool.Begin(ctx)
-		if err != nil {
-			log.Errorf("failed to begin database transaction for tag '%d': %v", lastHeardData.Tagnumber, err)
-			WriteJsonError(w, http.StatusInternalServerError)
-			return
-		}
-
-		clientUUID, err = database.GetClientUUIDByTag(ctx, tx, lastHeardData.Tagnumber)
+		clientUUID, err = database.GetClientUUIDByTag(ctx, pgxPool, lastHeardData.Tagnumber)
 		if err != nil {
 			log.Errorf("%v '%d': %v", types.ErrClientUUIDNotFoundInDB, lastHeardData.Tagnumber, err)
 			WriteJsonError(w, http.StatusNotFound)
@@ -1404,24 +1394,14 @@ func SetAllJobs(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if clientJson.JobName == nil || strings.TrimSpace(*clientJson.JobName) == "" {
-		log.Warn("Job name is missing")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) < 1 ||
-		utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) > 64 {
+	if utf8.RuneCountInString(clientJson.JobName) < 1 ||
+		utf8.RuneCountInString(clientJson.JobName) > 64 {
 		log.Warn("Invalid job name length")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if !types.IsPrintableASCII([]byte(*clientJson.JobName)) {
-		log.Warn("Non-printable ASCII characters in job name field")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
 
-	if err = database.SetAllOnlineClientJobs(req.Context(), *clientJson.JobName); err != nil {
+	if err = database.SetAllOnlineClientJobs(req.Context(), clientJson.JobName); err != nil {
 		log.Error("Failed to set all jobs: " + err.Error())
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -1455,24 +1435,14 @@ func SetClientJob(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Job name checks
-	if clientJson.JobName == nil || strings.TrimSpace(*clientJson.JobName) == "" {
-		log.Warn("Job name is missing")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-	if utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) < 1 ||
-		utf8.RuneCountInString(strings.TrimSpace(*clientJson.JobName)) > 64 {
+	if utf8.RuneCountInString(clientJson.JobName) < 1 ||
+		utf8.RuneCountInString(clientJson.JobName) > 64 {
 		log.Warn("Invalid job name length")
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if !types.IsPrintableASCII([]byte(*clientJson.JobName)) {
-		log.Warn("Non-printable ASCII characters in job name field")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
 
-	if err = database.SetClientJob(req.Context(), clientJson.Tagnumber, *clientJson.JobName); err != nil {
+	if err = database.SetClientJob(req.Context(), clientJson.Tagnumber, clientJson.JobName); err != nil {
 		log.Error("Failed to set client job: " + err.Error())
 		WriteJsonError(w, http.StatusInternalServerError)
 		return
@@ -1509,9 +1479,9 @@ func UpdateClientHealthCheck(w http.ResponseWriter, req *http.Request) {
 	// 	WriteJsonError(w, http.StatusBadRequest)
 	// 	return
 	// }
-	if hardwareCheckData.LastHardwareCheck != nil {
-		ptrTime := hardwareCheckData.LastHardwareCheck.UTC()
-		hardwareCheckData.LastHardwareCheck = &ptrTime
+	if !hardwareCheckData.LastHardwareCheck.IsZero() {
+		utcTime := hardwareCheckData.LastHardwareCheck.UTC()
+		hardwareCheckData.LastHardwareCheck = utcTime
 	}
 
 	if err = database.UpsertClientHealthCheck(ctx, &hardwareCheckData); err != nil {
@@ -1531,25 +1501,19 @@ func SetClientHardwareData(w http.ResponseWriter, req *http.Request) {
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	var hardwareData *types.ClientHardwareView
+	hardwareData := types.ClientHardwareView{}
 	if err := json.Unmarshal(clientBody, &hardwareData); err != nil {
 		log.Warn("Cannot decode SetClientHardwareData JSON: " + err.Error())
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
 	if err := types.IsTagnumberInt64Valid(hardwareData.Tagnumber); err != nil {
-		log.Warn("Invalid tagnumber: " + err.Error())
+		log.Warnf("Invalid tagnumber: %v", err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if hardwareData.SystemSerial == nil || strings.TrimSpace(*hardwareData.SystemSerial) == "" {
-		log.Warn("System serial number is missing or empty in SetClientHardwareData")
-		WriteJsonError(w, http.StatusBadRequest)
-		return
-	}
-
-	if hardwareData == nil {
-		log.Warn("Empty hardware data provided in SetClientHardwareData")
+	if err := types.IsSystemSerialValid(hardwareData.SystemSerial); err != nil {
+		log.Warnf("System serial number is invalid for tagnumber %d: %v", hardwareData.Tagnumber, err)
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
@@ -1559,19 +1523,19 @@ func SetClientHardwareData(w http.ResponseWriter, req *http.Request) {
 		WriteJsonError(w, http.StatusBadRequest)
 		return
 	}
-	if hardwareData.BatteryManufactureDate != nil {
-		USAMatched := types.USADateRegex.MatchString(*hardwareData.BatteryManufactureDate)
-		ISOMatched := types.ISODateRegex.MatchString(*hardwareData.BatteryManufactureDate)
+	if hardwareData.BatteryManufactureDate != "" {
+		USAMatched := types.USADateRegex.MatchString(hardwareData.BatteryManufactureDate)
+		ISOMatched := types.ISODateRegex.MatchString(hardwareData.BatteryManufactureDate)
 		if !USAMatched && !ISOMatched {
-			*hardwareData.BatteryManufactureDate = ""
+			hardwareData.BatteryManufactureDateParsed = time.Time{}
 		}
 		if USAMatched {
-			parsedTime, err := time.Parse("01/02/2006", *hardwareData.BatteryManufactureDate)
+			parsedTime, err := time.Parse("01/02/2006", hardwareData.BatteryManufactureDate)
 			if err != nil {
 				log.Warn("Failed to parse battery manufacture date in MM/DD/YYYY format: " + err.Error())
-				*hardwareData.BatteryManufactureDate = ""
+				hardwareData.BatteryManufactureDateParsed = time.Time{}
 			} else {
-				*hardwareData.BatteryManufactureDate = parsedTime.Format("2006-01-02")
+				hardwareData.BatteryManufactureDateParsed = parsedTime
 			}
 		}
 	}

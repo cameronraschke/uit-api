@@ -20,8 +20,8 @@ func StartWebServer(ctx context.Context) error {
 
 	// https handlers and middleware chains
 	httpsBaseChain := endpoints.NewChain(
-		endpoints.StoreLoggerMiddleware,
 		endpoints.PanicRecoveryMiddleware,
+		endpoints.StoreLoggerMiddleware,
 		endpoints.LimitRequestSizeMiddleware,
 		endpoints.StoreClientIPMiddleware,
 		endpoints.AllowIPRangeMiddleware("any"),

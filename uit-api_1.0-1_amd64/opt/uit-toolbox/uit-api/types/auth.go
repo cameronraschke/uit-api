@@ -42,13 +42,13 @@ type AuthSession struct {
 	IPAddress     netip.Addr
 	SessionID     string
 	SessionTTL    time.Duration
-	SessionCookie *http.Cookie
+	SessionCookie http.Cookie
 	BasicToken    BasicToken
-	BasicCookie   *http.Cookie
+	BasicCookie   http.Cookie
 	BearerToken   BearerToken
-	BearerCookie  *http.Cookie
+	BearerCookie  http.Cookie
 	CSRFToken     CSRFToken
-	CSRFCookie    *http.Cookie
+	CSRFCookie    http.Cookie
 	Attributes    *SessionAttributes
 }
 

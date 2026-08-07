@@ -50,8 +50,8 @@ func NewSelectRepo() (Select, error) {
 
 var _ Select = (*SelectRepo)(nil)
 
-func GetClientUUIDByTag(ctx context.Context, tx pgx.Tx, tagnumber int64) (uuid.UUID, error) {
-	if tx == nil {
+func GetClientUUIDByTag(ctx context.Context, pgxPool *pgxpool.Pool, tagnumber int64) (uuid.UUID, error) {
+	if pgxPool == nil {
 		return uuid.Nil, fmt.Errorf("%w: transaction is nil", types.DatabaseTransactionError)
 	}
 
@@ -63,12 +63,10 @@ func GetClientUUIDByTag(ctx context.Context, tx pgx.Tx, tagnumber int64) (uuid.U
 		SELECT uuid
 		FROM ids
 		WHERE tagnumber = $1
-		ORDER BY time DESC
-		LIMIT 1
 	;`
 
 	var clientUUID uuid.UUID
-	err := tx.QueryRow(ctx, sqlCode, toNullInt64(tagnumber)).Scan(&clientUUID)
+	err := pgxPool.QueryRow(ctx, sqlCode, int64ToSqlNull(tagnumber)).Scan(&clientUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, fmt.Errorf("%w: no client found for tagnumber '%d'", types.DatabaseQueryError, tagnumber)
@@ -79,8 +77,8 @@ func GetClientUUIDByTag(ctx context.Context, tx pgx.Tx, tagnumber int64) (uuid.U
 }
 
 func GetClientUUIDBySerial(ctx context.Context, pgxPool *pgxpool.Pool, systemSerial string) (clientUUID uuid.UUID, err error) {
-	if strings.TrimSpace(systemSerial) == "" {
-		return uuid.Nil, fmt.Errorf("%w: systemSerial is empty", types.InvalidStructureError)
+	if err := types.IsSystemSerialValid(systemSerial); err != nil {
+		return uuid.Nil, fmt.Errorf("%w for '%s': %v", types.InvalidFieldError, "systemSerial", err)
 	}
 	if pgxPool == nil {
 		pgxPool, err = GetPGXPool()
@@ -96,12 +94,12 @@ func GetClientUUIDBySerial(ctx context.Context, pgxPool *pgxpool.Pool, systemSer
 	;`
 
 	row := pgxPool.QueryRow(ctx, sqlCode,
-		toNullString(systemSerial),
+		stringToSqlNull(systemSerial),
 	)
 	if err := row.Scan(
 		&clientUUID,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, fmt.Errorf("%w: no client found for system serial '%s'", types.DatabaseQueryError, systemSerial)
 		}
 		return uuid.Nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
@@ -217,7 +215,7 @@ func ClientIDLookup(ctx context.Context, tag int64, serial string) (*types.Clien
 		&clientLookup.ClientUUID,
 	)
 	if rowScanErr != nil {
-		if errors.Is(rowScanErr, sql.ErrNoRows) {
+		if errors.Is(rowScanErr, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %v", types.DatabaseRowScanError, rowScanErr)
@@ -430,7 +428,7 @@ func (repo *SelectRepo) CheckTwoFactorCode(ctx context.Context, twoFactorCode *s
 	const sqlQuery = `SELECT two_factor_code FROM logins WHERE two_factor_code = $1 LIMIT 1;`
 
 	var dbCode string
-	row := repo.DB.QueryRowContext(ctx, sqlQuery, ptrToNullString(twoFactorCode))
+	row := repo.DB.QueryRowContext(ctx, sqlQuery, stringPtrToSqlNull(twoFactorCode))
 	if err := row.Scan(&dbCode); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
@@ -449,7 +447,7 @@ func (repo *SelectRepo) CheckAuthCredentials(ctx context.Context, username *stri
 	const sqlQuery = `SELECT password FROM logins WHERE username = $1 LIMIT 1;`
 
 	var dbBcryptHash sql.NullString
-	row := repo.DB.QueryRowContext(ctx, sqlQuery, ptrToNullString(username))
+	row := repo.DB.QueryRowContext(ctx, sqlQuery, stringPtrToSqlNull(username))
 	if err := row.Scan(&dbBcryptHash); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -466,7 +464,7 @@ func (repo *SelectRepo) CheckAuthCredentials(ctx context.Context, username *stri
 
 func SelectIsClientJobAvailable(ctx context.Context, tag int64) (*bool, error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
-		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
+		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
 
 	dbConn, err := GetDatabasePool()
@@ -486,12 +484,12 @@ func SelectIsClientJobAvailable(ctx context.Context, tag int64) (*bool, error) {
 		job_queue.client_uuid = (SELECT uuid FROM ids WHERE tagnumber = $1 ORDER BY time DESC LIMIT 1)`
 
 	var jobAvailable bool
-	row := dbConn.QueryRowContext(ctx, sqlQuery, toNullInt64(tag))
+	row := dbConn.QueryRowContext(ctx, sqlQuery, int64ToSqlNull(tag))
 	if err := row.Scan(&jobAvailable); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
+		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
 	return &jobAvailable, nil
 }
@@ -519,14 +517,14 @@ func GetNotes(ctx context.Context, noteType string) (*types.GeneralNoteResponse,
 
 	generalNoteRow := new(types.GeneralNoteResponse)
 	row := pgxPool.QueryRow(ctx, sqlQuery,
-		toNullString(noteType),
+		stringToSqlNull(noteType),
 	)
 	if err := row.Scan(
 		&generalNoteRow.Time,
 		&generalNoteRow.NoteType,
 		&generalNoteRow.NoteContent,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -646,8 +644,8 @@ func GetLocationFormData(ctx context.Context, tag int64, serial string) (*types.
 	LIMIT 1;`
 
 	row := pgxPool.QueryRow(ctx, sqlQuery,
-		toNullInt64(tag),
-		toNullString(serial),
+		int64ToSqlNull(tag),
+		stringToSqlNull(serial),
 	)
 
 	inventoryFormPrefillRow := new(types.InventoryFormPrefillRow)
@@ -677,7 +675,7 @@ func GetLocationFormData(ctx context.Context, tag int64, serial string) (*types.
 		&inventoryFormPrefillRow.Note,
 		&inventoryFormPrefillRow.FileCount,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -790,7 +788,7 @@ func GetClientImageManifestByFileUUID(ctx context.Context, fileUUID string) (*ty
 		&imageManifest.Pinned,
 		&imageManifest.Caption,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -1616,7 +1614,7 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueTableRowView, error)
 			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
 		}
 		row.LastHeard = onlineClientsMapUUIDAsKey[clientUUID].LastHeard
-		row.ClientUUID = &clientUUID
+		row.ClientUUID = clientUUID
 		row.SystemUptime = time.Duration(onlineClientsMapUUIDAsKey[clientUUID].SystemUptime.Seconds())
 		row.AppUptime = time.Duration(onlineClientsMapUUIDAsKey[clientUUID].AppUptime.Seconds())
 		jobQueueRows = append(jobQueueRows, row)
@@ -1902,7 +1900,7 @@ func GetClientHardwareOverview(ctx context.Context, tag int64) ([]types.ClientHa
 		&clientHardwareData.DeviceType,
 		&clientHardwareData.MemorySpeedMHz,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("error during row scan: %w", err)
@@ -1921,28 +1919,28 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
-	}
-	defer cleanupPGXTx(tx, &err)
+	const clientUUIDSql = `
+		SELECT uuid
+		FROM ids
+		WHERE tagnumber = $1
+		ORDER BY time DESC
+		LIMIT 1
+	;`
 
-	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
-	if err != nil {
+	var clientUUID uuid.UUID
+	if err := pgxPool.QueryRow(ctx, clientUUIDSql, int64ToSqlNull(tag)).Scan(&clientUUID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return queuePositionMaxValue, fmt.Errorf("%w: no client found for tagnumber '%d'", types.DatabaseQueryError, tag)
+		}
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
 
-	onlineClientData, err := appstate.GetAllOnlineClientsData()
+	onlineClientUUIDs, err := appstate.GetAllOnlineClientUUIDs()
 	if err != nil {
 		return queuePositionMaxValue, fmt.Errorf("%w: %w", types.ErrNoOnlineClients, err)
 	}
 
-	onlineClientUUIDs := make([]uuid.UUID, 0, len(onlineClientData))
-	for _, realtimeData := range onlineClientData {
-		onlineClientUUIDs = append(onlineClientUUIDs, realtimeData.ClientUUID)
-	}
-
-	if len(onlineClientData) == 0 || len(onlineClientUUIDs) == 0 {
+	if len(onlineClientUUIDs) == 0 {
 		return queuePositionMaxValue, nil
 	}
 
@@ -1984,7 +1982,7 @@ func SelectJobQueuePosition(ctx context.Context, tag int64) (int64, error) {
 	if err := row.Scan(
 		&queuePosition,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return queuePositionMaxValue, nil
 		}
 		return queuePositionMaxValue, fmt.Errorf("error during row scan: %w", err)
@@ -2019,7 +2017,7 @@ func SelectJobName(ctx context.Context, tag int64) (*string, error) {
 	if err := row.Scan(
 		&jobName,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -2056,7 +2054,7 @@ func GetFormattedJobName(ctx context.Context, jobName string) (*string, error) {
 	if err := row.Scan(
 		&jobNameFormatted,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		} else {
 			return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -2066,7 +2064,7 @@ func GetFormattedJobName(ctx context.Context, jobName string) (*string, error) {
 }
 
 func GetAllBuildingsAndRooms(ctx context.Context) ([]types.AllBuildingsAndRooms, error) {
-	dbConn, err := GetDatabasePool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2088,7 +2086,7 @@ func GetAllBuildingsAndRooms(ctx context.Context) ([]types.AllBuildingsAndRooms,
 			room ASC NULLS LAST
 	;`
 
-	rows, err := dbConn.QueryContext(ctx, sqlQuery)
+	rows, err := pgxPool.Query(ctx, sqlQuery)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -2123,7 +2121,7 @@ func SelectCheckoutData(ctx context.Context, tag int64) (*types.CheckoutLogRespo
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return nil, err
 	}
-	dbConn, err := GetDatabasePool()
+	pgxPool, err := GetPGXPool()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
@@ -2143,8 +2141,8 @@ func SelectCheckoutData(ctx context.Context, tag int64) (*types.CheckoutLogRespo
 	;`
 
 	var checkoutLogRow types.CheckoutLogResponse
-	row := dbConn.QueryRowContext(ctx, sqlQuery,
-		toNullInt64(tag),
+	row := pgxPool.QueryRow(ctx, sqlQuery,
+		int64ToSqlNull(tag),
 	)
 	rowScanErr := row.Scan(
 		&checkoutLogRow.Tagnumber,
@@ -2153,7 +2151,7 @@ func SelectCheckoutData(ctx context.Context, tag int64) (*types.CheckoutLogRespo
 		&checkoutLogRow.ReturnDate,
 	)
 	if rowScanErr != nil {
-		if errors.Is(rowScanErr, sql.ErrNoRows) {
+		if errors.Is(rowScanErr, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, rowScanErr)
@@ -2172,12 +2170,7 @@ func SelectClientInfo(ctx context.Context, tag int64) (*types.ClientInfoResponse
 		return nil, fmt.Errorf("%w: %w", types.DatabaseConnError, err)
 	}
 
-	tx, err := pgxPool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", types.DatabaseTransactionError, err)
-	}
-
-	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
+	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -2567,7 +2560,7 @@ func SelectDiskImageByModel(ctx context.Context, r *types.DiskImageNameRequest) 
 		&diskImageName.SystemModel,
 		&diskImageName.ImageName,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)
@@ -2648,7 +2641,7 @@ func ConvertClientInfoToCSV(ctx context.Context, tags []int64) (*bytes.Buffer, e
 
 	for _, row := range dbQueryData {
 		record := []string{
-			ptrIntToString(row.Tagnumber),
+			ptrInt64ToString(row.Tagnumber),
 			ptrStringToString(row.SystemSerial),
 			ptrStringToString(row.EthernetMAC),
 			ptrStringToString(row.WiFiMAC),
@@ -2671,15 +2664,15 @@ func ConvertClientInfoToCSV(ctx context.Context, tags []int64) (*bytes.Buffer, e
 			ptrStringToString(row.TPMVersion),
 			ptrBoolToString(row.SecureBootEnabled),
 			ptrStringToString(row.CPUModel),
-			ptrIntToString(row.CPUMaxSpeedMhz),
-			ptrIntToString(row.CPUCoreCount),
-			ptrIntToString(row.CPUThreadCount),
-			ptrIntToString(row.MemoryCapacityKB),
-			ptrIntToString(row.MemorySpeedMHz),
+			ptrInt64ToString(row.CPUMaxSpeedMhz),
+			ptrInt64ToString(row.CPUCoreCount),
+			ptrInt64ToString(row.CPUThreadCount),
+			ptrInt64ToString(row.MemoryCapacityKB),
+			ptrInt64ToString(row.MemorySpeedMHz),
 			ptrSliceToString(row.MemorySerial),
 			ptrStringToString(row.DiskModel),
 			ptrStringToString(row.DiskSerial),
-			ptrIntToString(row.DiskSizeKB),
+			ptrInt64ToString(row.DiskSizeKB),
 			ptrBoolToString(row.IsDiskEncrypted),
 			ptrStringToString(row.ClientStatus),
 			ptrBoolToString(row.IsBroken),

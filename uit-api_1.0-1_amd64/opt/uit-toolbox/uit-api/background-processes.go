@@ -259,7 +259,7 @@ func writeLastHeardToDB(parentCtx context.Context, d time.Duration) (logMsg []ba
 			continue
 		}
 
-		if data.LastHeard == nil || data.LastHeard.IsZero() {
+		if data.LastHeard.IsZero() {
 			logMsg = append(logMsg, backgroundLogMessage{Level: slog.LevelWarn, Message: fmt.Sprintf("skipping realtime update for tag '%d': invalid last_heard value", tag)})
 			continue
 		}

@@ -40,7 +40,7 @@ func lockClientRowByTagnumber(ctx context.Context, tx *sql.Tx, tagnumber int64) 
 		FOR UPDATE
 	;`
 
-	err = tx.QueryRowContext(ctx, sqlCode, toNullInt64(tagnumber)).Scan(&clientUUID)
+	err = tx.QueryRowContext(ctx, sqlCode, int64ToSqlNull(tagnumber)).Scan(&clientUUID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return uuid.Nil, fmt.Errorf("%w: no client found for tagnumber '%d'", types.DatabaseQueryError, tagnumber)
@@ -77,7 +77,7 @@ func lockClientRowBySystemSerial(ctx context.Context, tx *sql.Tx, systemSerial s
 		FOR UPDATE
 	;`
 
-	err = tx.QueryRowContext(ctx, sqlCode, toNullString(systemSerial)).Scan(&clientUUID)
+	err = tx.QueryRowContext(ctx, sqlCode, stringToSqlNull(systemSerial)).Scan(&clientUUID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return uuid.Nil, fmt.Errorf("%w: no client found for system serial '%s'", types.DatabaseQueryError, systemSerial)
@@ -164,9 +164,9 @@ func InsertNewNote(ctx context.Context, timestamp *time.Time, noteType *string, 
 
 	sqlCode := `INSERT INTO notes (time, note_type, note) VALUES ($1, $2, $3);`
 	sqlResult, err := tx.ExecContext(ctx, sqlCode,
-		ptrToNullTime(timestamp),
-		ptrToNullString(noteType),
-		ptrToNullString(noteContent),
+		timePtrToSqlNull(timestamp),
+		stringPtrToSqlNull(noteType),
+		stringPtrToSqlNull(noteContent),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -225,7 +225,7 @@ func UpdateClientHealthUpdate(ctx context.Context, transactionUUID uuid.UUID, cl
 
 	clientHealthResult, err := tx.ExecContext(ctx, clientHealthSql,
 		clientHealthData.Tagnumber,
-		ptrToNullTime(clientHealthData.LastHardwareCheck),
+		timePtrToSqlNull(clientHealthData.LastHardwareCheck),
 		transactionUUID,
 	)
 	if err != nil {
@@ -301,11 +301,11 @@ func InsertClientCheckoutsUpdate(ctx context.Context, transactionUUID uuid.UUID,
 
 	checkoutLogResult, err := tx.ExecContext(ctx, checkoutSql,
 		transactionUUID,
-		toNullInt64(checkoutData.Tagnumber),
-		ptrToNullTime(checkoutData.CheckoutDate),
-		ptrToNullTime(checkoutData.ReturnDate),
-		ptrToNullBool(checkoutData.CheckoutBool),
-		ptrToNullString(checkoutData.CustomerName),
+		int64ToSqlNull(checkoutData.Tagnumber),
+		timePtrToSqlNull(checkoutData.CheckoutDate),
+		timePtrToSqlNull(checkoutData.ReturnDate),
+		boolPtrToSqlNull(checkoutData.CheckoutBool),
+		stringPtrToSqlNull(checkoutData.CustomerName),
 	)
 	if err != nil {
 		return err
@@ -374,9 +374,9 @@ func UpdateInventoryHardwareData(ctx context.Context, transactionUUID uuid.UUID,
 	hardwareDataResult, err = tx.ExecContext(ctx, hardwareDataSql,
 		transactionUUID,
 		hardwareData.Tagnumber,
-		ptrToNullString(hardwareData.SystemManufacturer),
-		ptrToNullString(hardwareData.SystemModel),
-		ptrToNullString(hardwareData.DeviceType),
+		stringPtrToSqlNull(hardwareData.SystemManufacturer),
+		stringPtrToSqlNull(hardwareData.SystemModel),
+		stringPtrToSqlNull(hardwareData.DeviceType),
 	)
 	if err != nil {
 		return fmt.Errorf("db error: %w", err)
@@ -428,14 +428,14 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	;`
 
 	_, err = tx.Exec(ctx, idsSql,
-		toNullInt64(inventoryUpdate.Tagnumber),
-		toNullString(inventoryUpdate.SystemSerial),
+		int64ToSqlNull(inventoryUpdate.Tagnumber),
+		stringToSqlNull(inventoryUpdate.SystemSerial),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
 
-	clientUUID, err := GetClientUUIDByTag(ctx, tx, inventoryUpdate.Tagnumber)
+	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, inventoryUpdate.Tagnumber)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -482,20 +482,20 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 
 	locationsLogResult, err := tx.Exec(ctx, locationsLogSql,
 		transactionUUID,
-		toNullUUID(clientUUID),
-		toNullInt64(inventoryUpdate.Tagnumber),
-		toNullString(inventoryUpdate.SystemSerial),
-		toNullString(inventoryUpdate.Location),
-		ptrToNullString(inventoryUpdate.Building),
-		ptrToNullString(inventoryUpdate.Room),
-		toNullString(inventoryUpdate.Department),
-		ptrToNullString(inventoryUpdate.PropertyCustodian),
-		ptrToNullTime(inventoryUpdate.AcquiredDate),
-		ptrToNullTime(inventoryUpdate.RetiredDate),
-		ptrToNullBool(inventoryUpdate.IsBroken),
-		ptrToNullBool(inventoryUpdate.DiskRemoved),
-		toNullString(inventoryUpdate.ClientStatus),
-		ptrToNullString(inventoryUpdate.Note),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(inventoryUpdate.Tagnumber),
+		stringToSqlNull(inventoryUpdate.SystemSerial),
+		stringToSqlNull(inventoryUpdate.Location),
+		stringPtrToSqlNull(inventoryUpdate.Building),
+		stringPtrToSqlNull(inventoryUpdate.Room),
+		stringToSqlNull(inventoryUpdate.Department),
+		stringPtrToSqlNull(inventoryUpdate.PropertyCustodian),
+		timePtrToSqlNull(inventoryUpdate.AcquiredDate),
+		timePtrToSqlNull(inventoryUpdate.RetiredDate),
+		boolPtrToSqlNull(inventoryUpdate.IsBroken),
+		boolPtrToSqlNull(inventoryUpdate.DiskRemoved),
+		stringToSqlNull(inventoryUpdate.ClientStatus),
+		stringPtrToSqlNull(inventoryUpdate.Note),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -559,20 +559,20 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 
 	locationsResult, err := tx.Exec(ctx, locationsSql,
 		transactionUUID,
-		toNullUUID(clientUUID),
-		toNullInt64(inventoryUpdate.Tagnumber),
-		toNullString(inventoryUpdate.SystemSerial),
-		toNullString(inventoryUpdate.Location),
-		ptrToNullString(inventoryUpdate.Building),
-		ptrToNullString(inventoryUpdate.Room),
-		toNullString(inventoryUpdate.Department),
-		ptrToNullString(inventoryUpdate.PropertyCustodian),
-		ptrToNullTime(inventoryUpdate.AcquiredDate),
-		ptrToNullTime(inventoryUpdate.RetiredDate),
-		ptrToNullBool(inventoryUpdate.IsBroken),
-		ptrToNullBool(inventoryUpdate.DiskRemoved),
-		toNullString(inventoryUpdate.ClientStatus),
-		ptrToNullString(inventoryUpdate.Note),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(inventoryUpdate.Tagnumber),
+		stringToSqlNull(inventoryUpdate.SystemSerial),
+		stringToSqlNull(inventoryUpdate.Location),
+		stringPtrToSqlNull(inventoryUpdate.Building),
+		stringPtrToSqlNull(inventoryUpdate.Room),
+		stringToSqlNull(inventoryUpdate.Department),
+		stringPtrToSqlNull(inventoryUpdate.PropertyCustodian),
+		timePtrToSqlNull(inventoryUpdate.AcquiredDate),
+		timePtrToSqlNull(inventoryUpdate.RetiredDate),
+		boolPtrToSqlNull(inventoryUpdate.IsBroken),
+		boolPtrToSqlNull(inventoryUpdate.DiskRemoved),
+		stringToSqlNull(inventoryUpdate.ClientStatus),
+		stringPtrToSqlNull(inventoryUpdate.Note),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -602,9 +602,9 @@ func InsertInventoryUpdate(ctx context.Context, transactionUUID uuid.UUID, inven
 	;`
 
 	osInfoResult, err := tx.Exec(ctx, osInfoSql,
-		toNullUUID(clientUUID),
+		uuidToSqlNull(clientUUID),
 		transactionUUID,
-		toNullString(inventoryUpdate.OUName),
+		stringToSqlNull(inventoryUpdate.OUName),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -690,18 +690,18 @@ func UpdateClientImages(ctx context.Context, transactionUUID uuid.UUID, manifest
 	;`
 
 	sqlResult, err := tx.ExecContext(ctx, sqlCode,
-		toNullString(manifest.FileUUID),
-		toNullTime(manifest.Time),
-		toNullInt64(manifest.Tagnumber),
-		toNullString(manifest.FileName),
-		ptrToNullString(manifest.ThumbnailFileName),
-		toNullInt(manifest.FileSize),
+		stringToSqlNull(manifest.FileUUID),
+		timeToSqlNull(manifest.Time),
+		int64ToSqlNull(manifest.Tagnumber),
+		stringToSqlNull(manifest.FileName),
+		stringPtrToSqlNull(manifest.ThumbnailFileName),
+		intToSqlNull(manifest.FileSize),
 		manifest.SHA256Hash,
-		toNullString(manifest.MimeType),
-		ptrToNullTime(manifest.ExifTimestamp),
-		ptrToNullInt64(manifest.ResolutionX),
-		ptrToNullInt64(manifest.ResolutionY),
-		ptrToNullString(manifest.Caption),
+		stringToSqlNull(manifest.MimeType),
+		timePtrToSqlNull(manifest.ExifTimestamp),
+		int64PtrToSqlNull(manifest.ResolutionX),
+		int64PtrToSqlNull(manifest.ResolutionY),
+		stringPtrToSqlNull(manifest.Caption),
 		manifest.Hidden,
 		manifest.Pinned,
 	)
@@ -747,7 +747,7 @@ func HideClientImageByUUID(ctx context.Context, fileUUID string) (err error) {
 	;`
 
 	sqlResult, err := tx.ExecContext(ctx, sqlQuery,
-		toNullString(fileUUID),
+		stringToSqlNull(fileUUID),
 	)
 	if err != nil {
 		return err
@@ -794,8 +794,8 @@ func TogglePinImage(ctx context.Context, tagnumber int64, fileUUID *string) (err
 			AND client_uuid = (SELECT uuid FROM ids WHERE tagnumber = $2)
 	;`
 	sqlResult, err := tx.ExecContext(ctx, sqlQuery,
-		ptrToNullString(fileUUID),
-		toNullInt64(tagnumber),
+		stringPtrToSqlNull(fileUUID),
+		int64ToSqlNull(tagnumber),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -901,7 +901,7 @@ func SetClientJob(ctx context.Context, tag int64, clientJob string) (err error) 
 	return nil
 }
 
-func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpdateDTO) (err error) {
+func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpdateRequest) (err error) {
 	if err := types.IsTagnumberInt64Valid(memInfo.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
@@ -951,8 +951,8 @@ func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpda
 	;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		toNullInt64(memInfo.TotalUsageKB),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(memInfo.TotalUsageKB),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -963,7 +963,7 @@ func UpsertClientMemoryUsageKB(ctx context.Context, memInfo types.MemoryDataUpda
 	return nil
 }
 
-func UpsertClientMemoryCapacityKB(ctx context.Context, memInfo types.MemoryDataUpdateDTO) (err error) {
+func UpsertClientMemoryCapacityKB(ctx context.Context, memInfo types.MemoryDataUpdateRequest) (err error) {
 	if err := types.IsTagnumberInt64Valid(memInfo.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
@@ -1017,8 +1017,8 @@ func UpsertClientMemoryCapacityKB(ctx context.Context, memInfo types.MemoryDataU
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
 		clientUUID,
-		toNullInt64(memInfo.Tagnumber),
-		toNullInt64(memInfo.TotalCapacityKB),
+		int64ToSqlNull(memInfo.Tagnumber),
+		int64ToSqlNull(memInfo.TotalCapacityKB),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1029,11 +1029,7 @@ func UpsertClientMemoryCapacityKB(ctx context.Context, memInfo types.MemoryDataU
 	return nil
 }
 
-func UpsertClientCPUUsage(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (err error) {
-	if cpuData == nil {
-		return fmt.Errorf("CPU data is required")
-	}
-
+func UpsertClientCPUUsage(ctx context.Context, cpuData types.CPUDataUpdateRequest) (err error) {
 	if err := types.IsTagnumberInt64Valid(cpuData.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
@@ -1083,7 +1079,7 @@ func UpsertClientCPUUsage(ctx context.Context, cpuData *types.CPUDataUpdateDTO) 
 	;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullUUID(clientUUID),
+		uuidToSqlNull(clientUUID),
 		cpuData.UsagePercent, // Usage can be at 0%, so don't set to null if it's 0
 	)
 	if err != nil {
@@ -1095,10 +1091,8 @@ func UpsertClientCPUUsage(ctx context.Context, cpuData *types.CPUDataUpdateDTO) 
 	return nil
 }
 
-func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (err error) {
-	if cpuData == nil {
-		return fmt.Errorf("CPU data is nil")
-	}
+func UpsertClientCPUMHz(ctx context.Context, cpuData types.CPUDataUpdateRequest) (err error) {
+
 
 	pgxPool, err := GetPGXPool()
 	if err != nil {
@@ -1111,7 +1105,7 @@ func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (e
 	}
 	defer cleanupPGXTx(tx, &err)
 
-	clientUUID, err := GetClientUUIDByTag(ctx, tx, cpuData.Tagnumber)
+	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, cpuData.Tagnumber)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}
@@ -1133,9 +1127,9 @@ func UpsertClientCPUMHz(ctx context.Context, cpuData *types.CPUDataUpdateDTO) (e
 			cpu_mhz = EXCLUDED.cpu_mhz
 	;`
 	res, err := tx.Exec(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		toNullInt64(cpuData.Tagnumber),
-		toNullFloat64(cpuData.MHz),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(cpuData.Tagnumber),
+		float64ToSqlNull(cpuData.MHz),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1195,9 +1189,9 @@ func (updateRepo *UpdateRepo) UpdateClientNetworkUsage(ctx context.Context, netw
 			link_speed = EXCLUDED.link_speed;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		ptrToNullInt64(networkData.NetworkUsage),
-		ptrToNullInt64(networkData.LinkSpeed),
+		uuidToSqlNull(clientUUID),
+		int64PtrToSqlNull(networkData.NetworkUsage),
+		int64PtrToSqlNull(networkData.LinkSpeed),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1208,10 +1202,7 @@ func (updateRepo *UpdateRepo) UpdateClientNetworkUsage(ctx context.Context, netw
 	return nil
 }
 
-func UpsertClientCPUTemperature(ctx context.Context, cpuTempData *types.CPUDataUpdateDTO) (err error) {
-	if cpuTempData == nil {
-		return fmt.Errorf("%w: %s", types.InvalidStructureError, "CPUData is nil")
-	}
+func UpsertClientCPUTemperature(ctx context.Context, cpuTempData types.CPUDataUpdateRequest) (err error) {
 	if err := types.IsTagnumberInt64Valid(cpuTempData.Tagnumber); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
@@ -1252,8 +1243,8 @@ func UpsertClientCPUTemperature(ctx context.Context, cpuTempData *types.CPUDataU
 			cpu_temp = EXCLUDED.cpu_temp;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullInt64(cpuTempData.Tagnumber),
-		ptrToNullFloat64(&degreesC),
+		int64ToSqlNull(cpuTempData.Tagnumber),
+		float64ToSqlNull(degreesC),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1306,8 +1297,8 @@ func (updateRepo *UpdateRepo) UpdateClientSystemUptime(ctx context.Context, tag 
 	;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		toNullInt64(systemUptime),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(systemUptime),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1360,8 +1351,8 @@ func (updateRepo *UpdateRepo) UpdateClientAppUptime(ctx context.Context, tag int
 	;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		toNullInt64(appUptime),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(appUptime),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1428,9 +1419,9 @@ func UpsertClientHealthCheck(ctx context.Context, healthCheck *types.ClientHealt
 		;`
 	var sqlResult sql.Result
 	sqlResult, err = tx.ExecContext(ctx, clientHealthCheckSQL,
-		toNullString(healthCheck.TransactionUUID),
-		clientUUID,
-		ptrToNullTime(healthCheck.LastHardwareCheck),
+		stringToSqlNull(healthCheck.TransactionUUID),
+		uuidToSqlNull(clientUUID),
+		timeToSqlNull(healthCheck.LastHardwareCheck),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1457,9 +1448,9 @@ func UpsertClientHealthCheck(ctx context.Context, healthCheck *types.ClientHealt
 			tpm_version = COALESCE(EXCLUDED.tpm_version, hardware_data.tpm_version)
 	;`
 	sqlResult, err = tx.ExecContext(ctx, clientHardwareSQL,
-		toNullString(healthCheck.TransactionUUID),
-		clientUUID,
-		ptrToNullString(healthCheck.TPMVersion),
+		stringToSqlNull(healthCheck.TransactionUUID),
+		uuidToSqlNull(clientUUID),
+		stringToSqlNull(healthCheck.TPMVersion),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1491,10 +1482,10 @@ func UpsertClientHealthCheck(ctx context.Context, healthCheck *types.ClientHealt
 	;`
 
 	sqlResult, err = tx.ExecContext(ctx, clientFirmwareTableInsertSQL,
-		toNullString(healthCheck.TransactionUUID),
+		stringToSqlNull(healthCheck.TransactionUUID),
 		clientUUID,
-		ptrToNullString(healthCheck.BIOSVersion),
-		ptrToNullTime(healthCheck.BIOSReleaseDate),
+		stringToSqlNull(healthCheck.BIOSVersion),
+		timeToSqlNull(healthCheck.BIOSReleaseDate),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1507,12 +1498,9 @@ func UpsertClientHealthCheck(ctx context.Context, healthCheck *types.ClientHealt
 }
 
 // Function to be used from Linux request
-func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHardwareView) (err error) {
-	if hardwareData == nil || hardwareData.SystemSerial == nil || strings.TrimSpace(hardwareData.TransactionUUID) == "" {
+func UpdateClientHardwareData(ctx context.Context, hardwareData types.ClientHardwareView) (err error) {
+	if hardwareData.TransactionUUID == "" {
 		return fmt.Errorf("hardwareData is invalid")
-	}
-	if ctx.Err() != nil {
-		return fmt.Errorf("context error: %w", ctx.Err())
 	}
 
 	pgxPool, err := GetPGXPool()
@@ -1526,7 +1514,7 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 	}
 	defer cleanupPGXTx(tx, &err)
 
-	clientUUID, err := lockClientRowBySystemSerialPGX(ctx, tx, *hardwareData.SystemSerial)
+	clientUUID, err := lockClientRowBySystemSerialPGX(ctx, tx, hardwareData.SystemSerial)
 	if err != nil {
 		return err
 	}
@@ -1599,25 +1587,25 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 	;`
 
 	hardwareDataResult, err := tx.Exec(ctx, hardwareDataTable,
-		ptrToNullString(&hardwareData.TransactionUUID),
-		clientUUID,
-		ptrToNullString(hardwareData.SystemSerial),
-		ptrToNullString(hardwareData.SystemUUID),
-		ptrToNullString(hardwareData.SystemManufacturer),
-		ptrToNullString(hardwareData.SystemModel),
-		ptrToNullString(hardwareData.SystemSKU),
-		ptrToNullString(hardwareData.DeviceType),
-		ptrToNullString(hardwareData.ChassisType),
-		ptrToNullString(hardwareData.MotherboardSerial),
-		ptrToNullString(hardwareData.MotherboardManufacturer),
-		ptrToNullString(hardwareData.CPUManufacturer),
-		ptrToNullString(hardwareData.CPUModel),
-		ptrToNullInt64(hardwareData.CPUMaxSpeedMhz),
-		ptrToNullInt64(hardwareData.CPUCoreCount),
-		ptrToNullInt64(hardwareData.CPUThreadCount),
-		ptrToNullString(hardwareData.EthernetMAC),
-		ptrToNullString(hardwareData.WiFiMAC),
-		ptrToNullString(hardwareData.TPMVersion),
+		stringToSqlNull(hardwareData.TransactionUUID),
+		uuidToSqlNull(clientUUID),
+		stringToSqlNull(hardwareData.SystemSerial),
+		stringToSqlNull(hardwareData.SystemUUID),
+		stringToSqlNull(hardwareData.SystemManufacturer),
+		stringToSqlNull(hardwareData.SystemModel),
+		stringToSqlNull(hardwareData.SystemSKU),
+		stringToSqlNull(hardwareData.DeviceType),
+		stringToSqlNull(hardwareData.ChassisType),
+		stringToSqlNull(hardwareData.MotherboardSerial),
+		stringToSqlNull(hardwareData.MotherboardManufacturer),
+		stringToSqlNull(hardwareData.CPUManufacturer),
+		stringToSqlNull(hardwareData.CPUModel),
+		int64ToSqlNull(hardwareData.CPUMaxSpeedMhz),
+		int64ToSqlNull(hardwareData.CPUCoreCount),
+		int64ToSqlNull(hardwareData.CPUThreadCount),
+		stringToSqlNull(hardwareData.EthernetMAC),
+		stringToSqlNull(hardwareData.WiFiMAC),
+		stringToSqlNull(hardwareData.TPMVersion),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1677,16 +1665,16 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 		hardwareData.TransactionUUID,
 		false,
 		clientUUID,
-		ptrToNullString(hardwareData.DiskModel),
-		ptrToNullString(hardwareData.DiskType),
-		ptrToNullInt64(hardwareData.DiskSize),
-		ptrToNullString(hardwareData.DiskSerial),
-		ptrToNullString(hardwareData.DiskFirmware),
-		ptrToNullInt64(hardwareData.DiskReadsKB),
-		ptrToNullInt64(hardwareData.DiskWritesKB),
-		ptrToNullInt64(hardwareData.DiskPowerCycles),
-		ptrToNullInt64(hardwareData.DiskPowerOnHours),
-		ptrToNullInt64(hardwareData.DiskErrors),
+		stringToSqlNull(hardwareData.DiskModel),
+		stringToSqlNull(hardwareData.DiskType),
+		int64ToSqlNull(hardwareData.DiskSize),
+		stringToSqlNull(hardwareData.DiskSerial),
+		stringToSqlNull(hardwareData.DiskFirmware),
+		int64ToSqlNull(hardwareData.DiskReadsKB),
+		int64ToSqlNull(hardwareData.DiskWritesKB),
+		int64ToSqlNull(hardwareData.DiskPowerCycles),
+		int64ToSqlNull(hardwareData.DiskPowerOnHours),
+		int64ToSqlNull(hardwareData.DiskErrors),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1695,13 +1683,13 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 		return fmt.Errorf("%w: expected exactly 1 row(s), got %d", types.DatabaseAffectedRowsError, historicalDiskDataResult.RowsAffected())
 	}
 
-	if hardwareData.BatterySerial != nil ||
-		hardwareData.BatteryManufacturer != nil ||
-		hardwareData.BatteryModel != nil ||
-		hardwareData.BatteryChargeCycles != nil ||
-		hardwareData.BatteryDesignCapacity != nil ||
-		hardwareData.BatteryManufactureDate != nil ||
-		hardwareData.BatteryCurrentMaxCapacity != nil {
+	if hardwareData.BatterySerial != "" ||
+		hardwareData.BatteryManufacturer != "" ||
+		hardwareData.BatteryModel != "" ||
+		hardwareData.BatteryChargeCycles > 0 ||
+		hardwareData.BatteryDesignCapacity > 0 ||
+		hardwareData.BatteryManufactureDate != "" ||
+		hardwareData.BatteryCurrentMaxCapacity > 0 {
 		const historicalBatteryDataTableInsertSQL = `
 		INSERT INTO historical_battery_data (
 			time,
@@ -1744,13 +1732,13 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 			hardwareData.TransactionUUID,
 			false,
 			clientUUID,
-			ptrToNullString(hardwareData.BatterySerial),
-			ptrToNullString(hardwareData.BatteryManufacturer),
-			ptrToNullString(hardwareData.BatteryModel),
-			ptrToNullInt64(hardwareData.BatteryChargeCycles),
-			ptrToNullFloat64(hardwareData.BatteryDesignCapacity),
-			ptrToNullDate(hardwareData.BatteryManufactureDate),
-			ptrToNullFloat64(hardwareData.BatteryCurrentMaxCapacity),
+			stringToSqlNull(hardwareData.BatterySerial),
+			stringToSqlNull(hardwareData.BatteryManufacturer),
+			stringToSqlNull(hardwareData.BatteryModel),
+			int64ToSqlNull(hardwareData.BatteryChargeCycles),
+			float64ToSqlNull(hardwareData.BatteryDesignCapacity),
+			timeToSqlNull(hardwareData.BatteryManufactureDateParsed),
+			float64ToSqlNull(hardwareData.BatteryCurrentMaxCapacity),
 		)
 		if err != nil {
 			return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1791,11 +1779,11 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 		memorySerialArray = nil
 	}
 	hardwareHistoryResult, err := tx.Exec(ctx, historicalHardwareDataTable,
-		toNullString(hardwareData.TransactionUUID),
-		toNullUUID(clientUUID),
+		stringToSqlNull(hardwareData.TransactionUUID),
+		uuidToSqlNull(clientUUID),
 		memorySerialArray,
-		ptrToNullInt64(hardwareData.MemoryCapacityKB),
-		ptrToNullInt64(hardwareData.MemorySpeedMHz),
+		int64ToSqlNull(hardwareData.MemoryCapacityKB),
+		int64ToSqlNull(hardwareData.MemorySpeedMHz),
 	)
 	if err != nil {
 		return err
@@ -1830,11 +1818,11 @@ func UpdateClientHardwareData(ctx context.Context, hardwareData *types.ClientHar
 	;`
 
 	firmwareSQLResult, err := tx.Exec(ctx, clientFirmwareInsertSQL,
-		toNullString(hardwareData.TransactionUUID),
+		stringToSqlNull(hardwareData.TransactionUUID),
 		clientUUID,
-		ptrToNullString(hardwareData.BiosVersion),
-		ptrToNullString(hardwareData.BiosFirmware),
-		ptrToNullTime(hardwareData.BiosReleaseDate),
+		stringToSqlNull(hardwareData.BiosVersion),
+		stringToSqlNull(hardwareData.BiosFirmware),
+		timeToSqlNull(hardwareData.BiosReleaseDate),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1879,8 +1867,8 @@ func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *t
 
 	var res sql.Result
 	res, err = tx.ExecContext(ctx, sqlCode,
-		toNullInt64(jobQueue.Tagnumber),
-		ptrToNullTime(jobQueue.JobQueuedAt),
+		int64ToSqlNull(jobQueue.Tagnumber),
+		timeToSqlNull(jobQueue.JobQueuedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -1892,11 +1880,11 @@ func (updateRepo *UpdateRepo) UpdateJobQueuedAt(ctx context.Context, jobQueue *t
 	return nil
 }
 
-func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time) (err error) {
+func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard time.Time) (err error) {
 	if err := types.IsTagnumberInt64Valid(tag); err != nil {
 		return fmt.Errorf("%w: %s (%w)", types.InvalidFieldError, "tagnumber", err)
 	}
-	if lastHeard == nil || lastHeard.IsZero() {
+	if lastHeard.IsZero() {
 		return fmt.Errorf("%w: %s", types.InvalidFieldError, "lastHeard")
 	}
 	if ctx.Err() != nil {
@@ -1913,7 +1901,7 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 	}
 	defer cleanupPGXTx(tx, &err)
 
-	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
+	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 	}
@@ -1926,8 +1914,8 @@ func UpdateClientLastHeard(ctx context.Context, tag int64, lastHeard *time.Time)
 		WHERE client_uuid = $1;`
 
 	sqlResult, err := tx.Exec(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		ptrToNullTime(lastHeard),
+		uuidToSqlNull(clientUUID),
+		timeToSqlNull(lastHeard),
 	)
 	if err != nil {
 		return err
@@ -1950,7 +1938,7 @@ func UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent float
 	}
 	defer cleanupPGXTx(tx, &err)
 
-	clientUUID, err := GetClientUUIDByTag(ctx, tx, tag)
+	clientUUID, err := GetClientUUIDByTag(ctx, pgxPool, tag)
 	if err != nil {
 		return fmt.Errorf("error getting client UUID by tag: %w", err)
 	}
@@ -1964,8 +1952,8 @@ func UpdateClientBatteryChargePcnt(ctx context.Context, tag int64, percent float
 			client_uuid = $1
 	;`
 	res, err := tx.Exec(ctx, sqlCode,
-		toNullUUID(clientUUID),
-		toNullFloat64(percent),
+		uuidToSqlNull(clientUUID),
+		float64ToSqlNull(percent),
 	)
 	if err != nil {
 		return fmt.Errorf("error updating client's battery charge percent: %w", err)
@@ -2045,9 +2033,9 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 	;`
 	var locationsLogSqlResult sql.Result
 	locationsLogSqlResult, err = tx.ExecContext(ctx, locationsLogSql,
-		toNullInt64(tag),
-		ptrToNullString(location),
-		ptrToNullString(transactionUUID),
+		int64ToSqlNull(tag),
+		stringPtrToSqlNull(location),
+		stringPtrToSqlNull(transactionUUID),
 	)
 	if err != nil {
 		return fmt.Errorf("error while bulk updating a client's ('%d') location: %w", tag, err)
@@ -2121,9 +2109,9 @@ func (updateRepo *UpdateRepo) BulkUpdateClientLocation(ctx context.Context, tran
 	;`
 	var locationsSQLResult sql.Result
 	locationsSQLResult, err = tx.ExecContext(ctx, locationsSQL,
-		toNullInt64(tag),
-		ptrToNullString(location),
-		ptrToNullString(transactionUUID),
+		int64ToSqlNull(tag),
+		stringPtrToSqlNull(location),
+		stringPtrToSqlNull(transactionUUID),
 	)
 	if err != nil {
 		return fmt.Errorf("error while bulk updating a client's ('%d') location: %w", tag, err)
@@ -2225,20 +2213,20 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	;`
 
 	hardwareDataResult, err := tx.Exec(ctx, hardwareDataSql,
-		toNullUUID(transactionUUID),
+		uuidToSqlNull(transactionUUID),
 		true,
-		toNullUUID(clientUUID),
-		ptrToNullString(windowsUpdateDTO.RequestMetadata.SystemSerial),
-		ptrToNullString(windowsUpdateDTO.SystemUUID),
-		ptrToNullString(windowsUpdateDTO.EthernetMACAddr),
-		ptrToNullString(windowsUpdateDTO.WifiMACAddr),
-		ptrToNullString(windowsUpdateDTO.SystemManufacturer),
-		ptrToNullString(windowsUpdateDTO.SystemModel),
-		ptrToNullString(windowsUpdateDTO.CPUModel),
-		ptrToNullInt64(windowsUpdateDTO.CPUCoreCount),
-		ptrToNullInt64(windowsUpdateDTO.CPUThreadCount),
-		ptrToNullString(windowsUpdateDTO.TPMVersion),
-		ptrToNullString(windowsUpdateDTO.TPMPublicKeyHash),
+		uuidToSqlNull(clientUUID),
+		stringPtrToSqlNull(windowsUpdateDTO.RequestMetadata.SystemSerial),
+		stringPtrToSqlNull(windowsUpdateDTO.SystemUUID),
+		stringPtrToSqlNull(windowsUpdateDTO.EthernetMACAddr),
+		stringPtrToSqlNull(windowsUpdateDTO.WifiMACAddr),
+		stringPtrToSqlNull(windowsUpdateDTO.SystemManufacturer),
+		stringPtrToSqlNull(windowsUpdateDTO.SystemModel),
+		stringPtrToSqlNull(windowsUpdateDTO.CPUModel),
+		int64PtrToSqlNull(windowsUpdateDTO.CPUCoreCount),
+		int64PtrToSqlNull(windowsUpdateDTO.CPUThreadCount),
+		stringPtrToSqlNull(windowsUpdateDTO.TPMVersion),
+		stringPtrToSqlNull(windowsUpdateDTO.TPMPublicKeyHash),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -2275,12 +2263,12 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	;`
 
 	clientHealthResult, err := tx.Exec(ctx, clientHealthSql,
-		toNullUUID(transactionUUID),
+		uuidToSqlNull(transactionUUID),
 		true,
 		clientUUID,
-		ptrToNullFloat64(windowsUpdateDTO.BatteryHealthPcnt),
-		ptrToNullInt64(windowsUpdateDTO.DiskFreeSpaceKB),
-		ptrToNullTime(windowsUpdateDTO.RequestMetadata.TimeStamp),
+		float64PtrToSqlNull(windowsUpdateDTO.BatteryHealthPcnt),
+		int64PtrToSqlNull(windowsUpdateDTO.DiskFreeSpaceKB),
+		timePtrToSqlNull(windowsUpdateDTO.RequestMetadata.TimeStamp),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -2312,11 +2300,11 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		;`
 
 		memoryDataResult, err := tx.Exec(ctx, memoryDataInsertSQL,
-			toNullUUID(transactionUUID),
+			uuidToSqlNull(transactionUUID),
 			true,
 			clientUUID,
-			ptrToNullInt64(windowsUpdateDTO.MemoryCapacityKB),
-			ptrToNullInt64(windowsUpdateDTO.MemorySpeedMHz),
+			int64PtrToSqlNull(windowsUpdateDTO.MemoryCapacityKB),
+			int64PtrToSqlNull(windowsUpdateDTO.MemorySpeedMHz),
 			windowsUpdateDTO.MemorySerial,
 		)
 		if err != nil {
@@ -2351,12 +2339,12 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		;`
 
 		diskDataResult, err := tx.Exec(ctx, diskDataInsertSQL,
-			toNullUUID(transactionUUID),
+			uuidToSqlNull(transactionUUID),
 			true,
 			clientUUID,
-			ptrToNullString(windowsUpdateDTO.DiskModel),
-			ptrToNullString(windowsUpdateDTO.DiskType),
-			ptrToNullInt64(windowsUpdateDTO.DiskSizeKB),
+			stringPtrToSqlNull(windowsUpdateDTO.DiskModel),
+			stringPtrToSqlNull(windowsUpdateDTO.DiskType),
+			int64PtrToSqlNull(windowsUpdateDTO.DiskSizeKB),
 		)
 		if err != nil {
 			return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -2399,9 +2387,9 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 		;`
 
 		batteryDataInsertResult, batteryDataInsertErr := tx.Exec(ctx, batteryDataInsertSQL,
-			toNullUUID(transactionUUID),
+			uuidToSqlNull(transactionUUID),
 			true,
-			toNullUUID(clientUUID),
+			uuidToSqlNull(clientUUID),
 			windowsUpdateDTO.BatterySerial,
 			windowsUpdateDTO.BatteryManufacturer,
 			windowsUpdateDTO.BatteryModel,
@@ -2500,27 +2488,27 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	}
 
 	osInfoResult, err := tx.Exec(ctx, osInfoSQLCode,
-		toNullUUID(clientUUID),
-		toNullUUID(transactionUUID),
-		ptrToNullTime(windowsUpdateDTO.OSInstalledAt),
-		ptrToNullString(windowsUpdateDTO.OSVendor),
-		ptrToNullString(windowsUpdateDTO.OSPlatform),
-		ptrToNullString(windowsUpdateDTO.OSArchitecture),
-		ptrToNullString(windowsUpdateDTO.OSName),
-		ptrToNullString(windowsUpdateDTO.OSVersion),
-		ptrToNullString(windowsUpdateDTO.WindowsDisplayVersion),
-		ptrToNullInt64(windowsUpdateDTO.WindowsBuildNumber),
-		ptrToNullInt64(windowsUpdateDTO.WindowsUBR),
-		ptrToNullBool(windowsUpdateDTO.IsDiskEncrypted),
+		uuidToSqlNull(clientUUID),
+		uuidToSqlNull(transactionUUID),
+		timePtrToSqlNull(windowsUpdateDTO.OSInstalledAt),
+		stringPtrToSqlNull(windowsUpdateDTO.OSVendor),
+		stringPtrToSqlNull(windowsUpdateDTO.OSPlatform),
+		stringPtrToSqlNull(windowsUpdateDTO.OSArchitecture),
+		stringPtrToSqlNull(windowsUpdateDTO.OSName),
+		stringPtrToSqlNull(windowsUpdateDTO.OSVersion),
+		stringPtrToSqlNull(windowsUpdateDTO.WindowsDisplayVersion),
+		int64PtrToSqlNull(windowsUpdateDTO.WindowsBuildNumber),
+		int64PtrToSqlNull(windowsUpdateDTO.WindowsUBR),
+		boolPtrToSqlNull(windowsUpdateDTO.IsDiskEncrypted),
 		adminUsers,
-		ptrToNullString(windowsUpdateDTO.ComputerName),
-		ptrToNullString(windowsUpdateDTO.ADDomain),
-		// ptrToNullString(windowsUpdateDTO.OUName),
-		ptrToNullString(windowsUpdateDTO.ADComputerName),
-		ptrToNullString(windowsUpdateDTO.ADDistinguishedName),
-		ptrToNullBool(windowsUpdateDTO.IsIntuneJoined),
-		ptrToNullBool(windowsUpdateDTO.SecureBootEnabled),
-		ptrToNullBool(windowsUpdateDTO.RequestMetadata.UpdatedFromWindows),
+		stringPtrToSqlNull(windowsUpdateDTO.ComputerName),
+		stringPtrToSqlNull(windowsUpdateDTO.ADDomain),
+		// stringPtrToSqlNull(windowsUpdateDTO.OUName),
+		stringPtrToSqlNull(windowsUpdateDTO.ADComputerName),
+		stringPtrToSqlNull(windowsUpdateDTO.ADDistinguishedName),
+		boolPtrToSqlNull(windowsUpdateDTO.IsIntuneJoined),
+		boolPtrToSqlNull(windowsUpdateDTO.SecureBootEnabled),
+		boolPtrToSqlNull(windowsUpdateDTO.RequestMetadata.UpdatedFromWindows),
 		windowsUpdateDTO.InstalledApps,
 		windowsUpdateDTO.ADSID,
 	)
@@ -2560,12 +2548,12 @@ func UpdateFromWindowsJSON(ctx context.Context, windowsUpdateDTO *types.WindowsU
 	;`
 
 	firmwareSQLResult, err := tx.Exec(ctx, clientFirmwareInsertSQL,
-		toNullString(transactionUUID.String()),
-		ptrToNullInt64(windowsUpdateDTO.RequestMetadata.Tagnumber),
-		ptrToNullBool(windowsUpdateDTO.RequestMetadata.UpdatedFromWindows),
-		ptrToNullString(windowsUpdateDTO.BIOSVersion),
-		ptrToNullTime(windowsUpdateDTO.BIOSReleaseDate),
-		ptrToNullBool(windowsUpdateDTO.Has2023CA),
+		stringToSqlNull(transactionUUID.String()),
+		int64PtrToSqlNull(windowsUpdateDTO.RequestMetadata.Tagnumber),
+		boolPtrToSqlNull(windowsUpdateDTO.RequestMetadata.UpdatedFromWindows),
+		stringPtrToSqlNull(windowsUpdateDTO.BIOSVersion),
+		timePtrToSqlNull(windowsUpdateDTO.BIOSReleaseDate),
+		boolPtrToSqlNull(windowsUpdateDTO.Has2023CA),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -2612,8 +2600,8 @@ func InitClient(ctx context.Context, dto *types.ClientInitDTO) (clientUUID *stri
 	`
 	var idResult sql.NullString
 	err = tx.QueryRowContext(ctx, sqlCode,
-		toNullInt64(dto.Tagnumber),
-		toNullString(dto.SystemSerial),
+		int64ToSqlNull(dto.Tagnumber),
+		stringToSqlNull(dto.SystemSerial),
 	).Scan(&idResult)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2703,21 +2691,21 @@ func UpsertJobStats(ctx context.Context, JobStatsDTO *types.JobStatsDTO) (err er
 	;`
 
 	sqlResult, err := tx.ExecContext(ctx, sqlCode,
-		toNullString(JobStatsDTO.TransactionUUID),
-		toNullUUID(clientUUID),
-		toNullInt64(JobStatsDTO.Tagnumber),
-		toNullString(JobStatsDTO.SystemSerial),
-		toNullTime(JobStatsDTO.JobStartTime),
-		toNullString(JobStatsDTO.DiskName),
-		ptrToNullBool(JobStatsDTO.JobCancelled),
-		ptrToNullBool(JobStatsDTO.EraseCompleted),
-		toNullString(JobStatsDTO.EraseMode),
-		toNullInt64(JobStatsDTO.EraseDiskPcnt),
-		toNullInt64(JobStatsDTO.EraseDuration),
-		ptrToNullBool(JobStatsDTO.CloneCompleted),
-		ptrToNullBool(&JobStatsDTO.CloneMaster),
-		toNullString(JobStatsDTO.CloneImageName),
-		toNullInt64(JobStatsDTO.CloneDuration),
+		stringToSqlNull(JobStatsDTO.TransactionUUID),
+		uuidToSqlNull(clientUUID),
+		int64ToSqlNull(JobStatsDTO.Tagnumber),
+		stringToSqlNull(JobStatsDTO.SystemSerial),
+		timeToSqlNull(JobStatsDTO.JobStartTime),
+		stringToSqlNull(JobStatsDTO.DiskName),
+		boolPtrToSqlNull(JobStatsDTO.JobCancelled),
+		boolPtrToSqlNull(JobStatsDTO.EraseCompleted),
+		stringToSqlNull(JobStatsDTO.EraseMode),
+		int64ToSqlNull(JobStatsDTO.EraseDiskPcnt),
+		int64ToSqlNull(JobStatsDTO.EraseDuration),
+		boolPtrToSqlNull(JobStatsDTO.CloneCompleted),
+		boolPtrToSqlNull(&JobStatsDTO.CloneMaster),
+		stringToSqlNull(JobStatsDTO.CloneImageName),
+		int64ToSqlNull(JobStatsDTO.CloneDuration),
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
@@ -2743,7 +2731,7 @@ func UpsertJobStats(ctx context.Context, JobStatsDTO *types.JobStatsDTO) (err er
 			last_updated = CURRENT_TIMESTAMP
 		;`
 
-		_, err = tx.ExecContext(ctx, cloneMasterUpdateSQL, toNullUUID(clientUUID))
+		_, err = tx.ExecContext(ctx, cloneMasterUpdateSQL, uuidToSqlNull(clientUUID))
 		if err != nil {
 			return fmt.Errorf("%w: %w", types.DatabaseUpdateError, err)
 		}
@@ -2771,7 +2759,7 @@ func DeleteOSInfoByTagnumber(ctx context.Context, tagnumber int64, serial string
 	}
 	defer cleanupPGXTx(tx, &err)
 
-	clientUUIDFromTag, err := GetClientUUIDByTag(ctx, tx, tagnumber)
+	clientUUIDFromTag, err := GetClientUUIDByTag(ctx, pgxPool, tagnumber)
 	if err != nil {
 		return fmt.Errorf("%w: %w", types.DatabaseQueryError, err)
 	}

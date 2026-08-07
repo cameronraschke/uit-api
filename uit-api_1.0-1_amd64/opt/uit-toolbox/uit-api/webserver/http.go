@@ -13,8 +13,8 @@ import (
 func StartFileServer(ctx context.Context, serverHost string) error {
 	log := logger.GetLogger().With(slog.String("func", "StartFileServer"))
 	httpBaseChain := endpoints.NewChain(
-		endpoints.StoreLoggerMiddleware,
 		endpoints.PanicRecoveryMiddleware,
+		endpoints.StoreLoggerMiddleware,
 		endpoints.LimitRequestSizeMiddleware,
 		endpoints.StoreClientIPMiddleware,
 		endpoints.AllowIPRangeMiddleware("lan"),

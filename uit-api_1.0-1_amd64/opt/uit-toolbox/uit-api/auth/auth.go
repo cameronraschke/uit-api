@@ -78,7 +78,7 @@ func CreateAuthSession(requestIP netip.Addr) (*types.AuthSession, error) {
 		IPAddress:  requestIP,
 		SessionID:  sessionID,
 		SessionTTL: types.AuthSessionTTL,
-		SessionCookie: &http.Cookie{
+		SessionCookie: http.Cookie{
 			Name:     "uit_session_id",
 			Value:    sessionID,
 			Path:     "/",
@@ -96,7 +96,7 @@ func CreateAuthSession(requestIP netip.Addr) (*types.AuthSession, error) {
 			IP:        requestIP,
 			Valid:     true,
 		},
-		BasicCookie: &http.Cookie{
+		BasicCookie: http.Cookie{
 			Name:     "uit_basic_token",
 			Value:    basicToken,
 			Path:     "/",
@@ -114,7 +114,7 @@ func CreateAuthSession(requestIP netip.Addr) (*types.AuthSession, error) {
 			IP:        requestIP,
 			Valid:     true,
 		},
-		BearerCookie: &http.Cookie{
+		BearerCookie: http.Cookie{
 			Name:     "uit_bearer_token",
 			Value:    bearerToken,
 			Path:     "/",
@@ -132,7 +132,7 @@ func CreateAuthSession(requestIP netip.Addr) (*types.AuthSession, error) {
 			IP:        requestIP,
 			Valid:     true,
 		},
-		CSRFCookie: &http.Cookie{
+		CSRFCookie: http.Cookie{
 			Name:     "uit_csrf_token",
 			Value:    csrfToken,
 			Path:     "/",

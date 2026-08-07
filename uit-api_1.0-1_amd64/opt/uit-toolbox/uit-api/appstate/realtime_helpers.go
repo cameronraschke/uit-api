@@ -137,7 +137,7 @@ func UpdateClientLastHeardInAppState(tag int64, lastHeard *time.Time) error {
 	defer appState.ClientRealtimeDataMu.Unlock()
 	clientData := appState.ClientRealtimeData[tag]
 	clientData.Tagnumber = tag
-	clientData.LastHeard = lastHeard
+	clientData.LastHeard = *lastHeard       // nil check above
 	clientData.LastHeardUpdatedInDB = false // Mark as not updated in DB, this function only gets used in post.go
 	appState.ClientRealtimeData[tag] = clientData
 
@@ -151,9 +151,9 @@ func ReplaceClientRealtimeData(tag int64, val *types.JobQueueRealtimeData) error
 	if val == nil {
 		return fmt.Errorf("JobQueueRealtimeData struct is nil")
 	}
-	if val.LastHeard == nil || val.LastHeard.IsZero() {
+	if val.LastHeard.IsZero() {
 		// return fmt.Errorf("lastHeard is nil, skipping update for tag %d", tag)
-		return nil // No need to update if lastHeard is nil or zero, just skip
+		return nil // No need to update if lastHeard is zero, just skip
 	}
 
 	appState, err := GetAppState()
@@ -170,7 +170,7 @@ func ReplaceClientRealtimeData(tag int64, val *types.JobQueueRealtimeData) error
 }
 
 func isClientOnline(clientData types.JobQueueRealtimeData) bool {
-	if clientData.LastHeard == nil || clientData.LastHeard.IsZero() {
+	if clientData.LastHeard.IsZero() {
 		return false
 	}
 	if clientData.LastHeard.Add(types.LastHeardTimeout).Before(time.Now()) {
@@ -196,6 +196,28 @@ func GetAllOnlineClients() (onlineClientTags []int64, err error) {
 		}
 	}
 	return onlineClientTags, nil
+}
+
+func GetAllOnlineClientUUIDs() ([]uuid.UUID, error) {
+	as, err := GetAppState()
+	if err != nil || as == nil {
+		return nil, fmt.Errorf("%w: %w", types.CannotGetAppStateError, err)
+	}
+
+	as.ClientRealtimeDataMu.RLock()
+	defer as.ClientRealtimeDataMu.RUnlock()
+
+	uuids := make([]uuid.UUID, 0, len(as.ClientRealtimeData))
+	for _, clientData := range as.ClientRealtimeData {
+		if !isClientOnline(clientData) {
+			continue
+		}
+		if clientData.ClientUUID == uuid.Nil {
+			continue
+		}
+		uuids = append(uuids, clientData.ClientUUID)
+	}
+	return uuids, nil
 }
 
 func GetRealtimeClientData(tag int64) (*types.JobQueueRealtimeData, error) {
