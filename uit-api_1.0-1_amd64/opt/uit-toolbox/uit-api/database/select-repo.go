@@ -1605,9 +1605,9 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 		if row.ClientUUID != nil && slices.Contains(onlineClientUUIDs, *row.ClientUUID) && row.Tagnumber != nil {
 			lastHeard := onlineRealtimeData[*row.Tagnumber].LastHeard
 			row.LastHeard = &lastHeard
-			systemUptime := time.Duration(onlineRealtimeData[*row.Tagnumber].SystemUptime) * time.Second
+			systemUptime := onlineRealtimeData[*row.Tagnumber].SystemUptime
 			row.SystemUptime = &systemUptime
-			appUptime := time.Duration(onlineRealtimeData[*row.Tagnumber].AppUptime) * time.Second
+			appUptime := onlineRealtimeData[*row.Tagnumber].AppUptime
 			row.AppUptime = &appUptime
 		}
 		jobQueueRows = append(jobQueueRows, row)
