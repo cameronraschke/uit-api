@@ -1544,9 +1544,8 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 			return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowIterationError, ctx.Err())}
 		}
 		var row types.JobQueueDBRow
-		var clientUUID uuid.UUID
 		if err := rows.Scan(
-			&clientUUID,
+			&row.ClientUUID,
 			&row.Tagnumber,
 			&row.SystemSerial,
 			&row.SystemManufacturer,
@@ -1603,12 +1602,12 @@ func GetJobQueueTable(ctx context.Context) ([]types.JobQueueDTO, []error) {
 			return nil, []error{fmt.Errorf("%w: %w", types.DatabaseRowScanError, err)}
 		}
 		// If a client is online, then add last heard, system uptime, and app uptime to the row
-		if slices.Contains(onlineClientUUIDs, clientUUID) && row.Tagnumber != nil {
+		if row.ClientUUID != nil && slices.Contains(onlineClientUUIDs, *row.ClientUUID) && row.Tagnumber != nil {
 			lastHeard := onlineRealtimeData[*row.Tagnumber].LastHeard
 			row.LastHeard = &lastHeard
-			systemUptime := onlineRealtimeData[*row.Tagnumber].SystemUptime
+			systemUptime := time.Duration(onlineRealtimeData[*row.Tagnumber].SystemUptime) * time.Second
 			row.SystemUptime = &systemUptime
-			appUptime := onlineRealtimeData[*row.Tagnumber].AppUptime
+			appUptime := time.Duration(onlineRealtimeData[*row.Tagnumber].AppUptime) * time.Second
 			row.AppUptime = &appUptime
 		}
 		jobQueueRows = append(jobQueueRows, row)

@@ -48,6 +48,11 @@ func (d DurationSeconds) Duration() time.Duration {
 	return time.Duration(d)
 }
 
+// Helper to create DurationSeconds from time.Duration
+func NewDurationSeconds(d time.Duration) DurationSeconds {
+	return DurationSeconds(d)
+}
+
 func ValidateASCIIStrLen(s *string, minLen int, maxLen int) error {
 	if err := ValidateStrLen(s, minLen, maxLen); err != nil {
 		return err
